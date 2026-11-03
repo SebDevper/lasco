@@ -1,0 +1,35 @@
+# Front en contenedor. ${BACKEND_URL} lo sustituye la imagen de nginx al arrancar (por defecto http://backend:8000).
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Posiciones de SOHO y la Tierra. JPL Horizons no envía cabeceras CORS, así que pasa por aquí
+    # (igual que el proxy de Vite en desarrollo): /api/horizons?… → https://ssd.jpl.nasa.gov/api/horizons.api?…
+    location /api/horizons {
+        proxy_pass https://ssd.jpl.nasa.gov/api/horizons.api;
+        proxy_ssl_server_name on;
+        proxy_read_timeout 60s;
+    }
+
+    # Backend de imágenes LASCO: /api/lasco/… → ${BACKEND_URL}/api/…
+    location /api/lasco/ {
+        proxy_pass ${BACKEND_URL}/api/;
+        proxy_read_timeout 60s;
+        client_max_body_size 1m;
+    }
+
+    # Archivos con hash en el nombre (los genera Vite): se pueden cachear para siempre.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

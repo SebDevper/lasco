@@ -31,6 +31,18 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Para verificar cambios visuales hay que levantar ambos servicios y mirar la página en el navegador (`npm run build`
 solo detecta errores de compilación). Detener servicios por puerto: `lsof -ti:5173,8000 -sTCP:LISTEN | xargs kill`.
 
+### Contenedores (Docker Compose; en esta máquina el motor es Colima: `colima start`)
+
+```bash
+docker compose up -d --build     # http://localhost:8080 (front con nginx) + backend en la red interna
+docker compose logs -f backend   # progreso de las descargas
+docker compose exec backend python -m app sync --hours 48
+docker compose down              # las imágenes quedan en el volumen lasco_data (down -v las borra)
+```
+
+En contenedores no hay servidor de Vite: `lasco_test/nginx.conf.template` hace lo mismo que el proxy de
+`vite.config.js` (`/api/horizons` → JPL, `/api/lasco/` → backend). Al cambiar un proxy, cambiar ambos.
+
 ## Arquitectura
 
 ### Flujo de datos

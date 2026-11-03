@@ -1,0 +1,34 @@
+# Panel SOHO/LASCO en contenedores.
+#   docker compose up -d --build     → http://localhost:8080
+#   docker compose logs -f backend   → progreso de las descargas
+#   docker compose down              → detener (las imágenes quedan en el volumen lasco_data)
+name: lasco
+
+services:
+  backend:
+    build: ./lasco_backend
+    environment:
+      # Ventana que se sincroniza al arrancar (ver lasco_backend/README.md).
+      LASCO_SYNC_HOURS: "24"
+      LASCO_SYNC_UNTIL: ephemeris
+    volumes:
+      - lasco_data:/data
+    restart: unless-stopped
+    # Sin puerto publicado: solo el front (nginx) le habla por la red interna.
+    # Para acceder directamente desde la máquina, descomentar:
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+
+  front:
+    build: ./lasco_test
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lasco_data:
