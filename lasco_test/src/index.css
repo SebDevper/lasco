@@ -1,0 +1,1030 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Estilo terminal: fondo negro, cada componente es una ventana (pane) con
+   barra de título, tipografía monoespaciada y acentos fósforo verde / ámbar.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: dark;
+  --bg: #000;
+  --pane-bg: #000;
+  --bar-bg: #06140a;
+  --border: #1d4a28;
+  --border-strong: #2f7a42;
+  --grid: #10291a;
+  --text-primary: #d7f7dd;
+  --text-secondary: #94c79e;
+  --text-muted: #5f9468;
+  --green: #3dff7a;
+  --series-1: #3dff7a;
+  --sun: #ffb347;
+  --amber: #ffb347;
+  --cyan: #5fd7ff;
+  --danger: #ff5f56;
+  --font: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Líneas de barrido CRT, muy sutiles */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.018) 0 1px, transparent 1px 3px);
+  z-index: 100;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+a {
+  color: var(--cyan);
+}
+
+::selection {
+  background: var(--green);
+  color: #000;
+}
+
+:focus-visible {
+  outline: 1px dashed var(--green);
+  outline-offset: 2px;
+}
+
+/* ── Prompt, comentarios, etiquetas de estado ─────────────── */
+.prompt {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.comment,
+.comment-inline {
+  color: var(--text-muted);
+}
+
+.comment {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+}
+
+.tag {
+  font-weight: 700;
+}
+
+.tag--ok {
+  color: var(--green);
+}
+
+.tag--info {
+  color: var(--cyan);
+}
+
+.tag--warn {
+  color: var(--amber);
+}
+
+.tag--error {
+  color: var(--danger);
+}
+
+.tag--muted {
+  color: var(--text-muted);
+}
+
+.cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.05em;
+  margin-left: 0.3em;
+  vertical-align: text-bottom;
+  background: var(--green);
+  animation: blink 1.1s steps(1) infinite;
+}
+
+.cursor--inline {
+  width: 0.5em;
+  height: 0.95em;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+  }
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bar-bg);
+}
+
+.header__prompt {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-user {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.prompt-sep {
+  color: var(--text-secondary);
+}
+
+.prompt-path {
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.header__clock {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Layout ───────────────────────────────────────────────── */
+.dashboard {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 16px 24px 40px;
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 360px;
+  gap: 14px;
+  margin-top: 14px;
+  transition: opacity 0.2s;
+}
+
+.dash-grid.is-refreshing {
+  opacity: 0.55;
+}
+
+.pane--scene {
+  grid-column: 1 / 3;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* El último panel de la columna derecha se estira hasta el final de la vista 3D. */
+.side > .pane:last-child {
+  flex: 1;
+}
+
+.pane--wide {
+  grid-column: 2 / -1;
+}
+
+.pane--full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .pane--scene,
+  .side {
+    grid-column: 1 / -1;
+  }
+  .side {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+  .pane--wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    font-size: 13px;
+  }
+  .dashboard {
+    padding: 12px 16px 32px;
+  }
+  .header {
+    padding: 10px 16px;
+  }
+  .header__clock {
+    display: none;
+  }
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pane--wide {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ── Ventanas (panes) ─────────────────────────────────────── */
+.pane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pane-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 0 0 1px #000, 0 0 24px rgb(61 255 122 / 0.04);
+}
+
+.pane:focus-within {
+  border-color: var(--border-strong);
+}
+
+.pane__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 6px 4px 10px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.pane__id {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.pane__title {
+  flex: 1;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.pane__body {
+  flex: 1;
+  padding: 12px 14px 14px;
+  min-width: 0;
+}
+
+.pane__cmd {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Consola superior ─────────────────────────────────────── */
+.pane--console .pane__body {
+  padding: 10px 14px;
+}
+
+.console__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.console__cmd {
+  color: var(--text-primary);
+}
+
+.console__log {
+  margin-top: 8px;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  line-height: 1.5;
+  /* Espacio reservado para 4 líneas de registro: que aparezcan o desaparezcan mensajes no mueve la página. */
+  min-height: calc(4 * 1.5em + 3 * 2px);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.console__progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ascii-bar {
+  color: var(--amber);
+  letter-spacing: -0.05em;
+}
+
+/* ── Botones ──────────────────────────────────────────────── */
+.btn,
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 2px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn::before,
+.segmented button::before {
+  content: '[ ';
+  color: var(--text-muted);
+}
+
+.btn::after,
+.segmented button::after {
+  content: ' ]';
+  color: var(--text-muted);
+}
+
+.btn {
+  color: var(--green);
+  font-weight: 500;
+}
+
+.btn:hover:not(:disabled),
+.segmented button:hover {
+  color: #000;
+  background: var(--green);
+}
+
+.btn:hover:not(:disabled)::before,
+.btn:hover:not(:disabled)::after,
+.segmented button:hover::before,
+.segmented button:hover::after {
+  color: #000;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.segmented button.is-active {
+  color: #000;
+  background: var(--green);
+  font-weight: 700;
+}
+
+.segmented button.is-active::before,
+.segmented button.is-active::after {
+  color: #000;
+}
+
+.segmented--small button,
+.btn--small {
+  font-size: 0.8rem;
+}
+
+.btn--play {
+  min-width: 9ch;
+}
+
+/* ── Escena 3D ────────────────────────────────────────────── */
+.scene-wrap {
+  position: relative;
+  border: 1px solid var(--grid);
+  overflow: hidden;
+}
+
+/* La escena ocupa todo el alto disponible del panel (que iguala a la columna derecha). */
+.pane--scene .pane__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.pane--scene .scene-wrap {
+  flex: 1;
+  display: flex;
+  min-height: 520px;
+}
+
+.scene {
+  position: relative;
+  flex: 1;
+  min-height: 520px;
+  background: #000;
+}
+
+@media (max-width: 1100px) {
+  .pane--scene .scene-wrap,
+  .scene {
+    min-height: 460px;
+  }
+}
+
+@media (max-width: 720px) {
+  .pane--scene .scene-wrap,
+  .scene {
+    min-height: 360px;
+  }
+}
+
+.scene canvas {
+  display: block;
+}
+
+.scene-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scene-label {
+  font-family: var(--font);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 1px 5px;
+  background: rgb(0 0 0 / 0.75);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* `translate` se suma al `transform` que pone CSS2DRenderer: separa las etiquetas cercanas (soho, L1, tierra). */
+.scene-label--accent {
+  color: #000;
+  background: var(--green);
+  border-color: var(--green);
+  font-weight: 700;
+  translate: -65% 6px;
+}
+
+.scene-label--muted {
+  color: var(--text-muted);
+  translate: 60% -4px;
+}
+
+.scene-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.scene-note {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.timeline__track {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+input[type='range'] {
+  accent-color: var(--green);
+}
+
+.timeline input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+
+/* Tramos de la línea de tiempo con imágenes LASCO descargadas */
+.timeline__coverage {
+  position: relative;
+  height: 3px;
+  margin: 0 8px;
+  background: var(--grid);
+}
+
+.timeline__coverage span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--amber);
+}
+
+.timeline__date {
+  min-width: 25ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .timeline {
+    flex-wrap: wrap;
+  }
+  .timeline__date {
+    min-width: 0;
+    width: 100%;
+    text-align: left;
+  }
+}
+
+/* Controles de la vista LASCO */
+.lasco-controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 6px 10px;
+  background: rgb(0 0 0 / 0.8);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.mix {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.mix input {
+  width: 120px;
+}
+
+.mix__value {
+  min-width: 4ch;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.lasco-controls__meta {
+  flex: 1 1 280px;
+  min-width: 0;
+  /* Una sola línea: el aviso de hueco no hace crecer la barra (se recorta con … si no cabe). */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.lasco-controls__meta span {
+  color: var(--text-muted);
+}
+
+.gap-badge {
+  margin-left: 8px;
+  color: var(--amber);
+  font-weight: 700;
+}
+
+/* Oculto pero ocupando su lugar, para que el layout no salte al aparecer o desaparecer. */
+.gap-badge.is-hidden {
+  visibility: hidden;
+}
+
+/* ── Telemetría ───────────────────────────────────────────── */
+.kv__key {
+  color: var(--cyan);
+}
+
+.hero {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.hero__value {
+  margin: 4px 0 2px;
+  font-size: 2.3rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--green);
+  text-shadow: 0 0 12px rgb(61 255 122 / 0.35);
+  letter-spacing: -0.02em;
+}
+
+.hero .comment-inline {
+  font-size: 0.8rem;
+}
+
+.kv {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.kv__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: baseline;
+}
+
+.kv__row dt {
+  font-size: 0.85rem;
+}
+
+.kv__value {
+  margin: 0;
+  text-align: right;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.kv__detail {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* ── man lasco ────────────────────────────────────────────── */
+.man {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.man__head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.man h3 {
+  margin: 10px 0 2px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.man p {
+  margin: 0 0 0 2ch;
+}
+
+.man b {
+  color: var(--green);
+}
+
+/* ── Imágenes LASCO ───────────────────────────────────────── */
+.lasco-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  transition: opacity 0.2s;
+}
+
+.lasco-grid.is-refreshing {
+  opacity: 0.6;
+}
+
+@media (max-width: 720px) {
+  .lasco-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lasco-figure {
+  margin: 0;
+}
+
+.lasco-figure__head {
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
+.lasco-figure__frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 520px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: #000;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.lasco-figure__frame:hover:not(:disabled) {
+  border-color: var(--green);
+}
+
+.lasco-figure__frame:disabled {
+  cursor: default;
+}
+
+.lasco-figure__frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.lasco-figure__frame img.is-loaded {
+  opacity: 1;
+}
+
+.lasco-figure__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.lasco-figure__cta {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  background: var(--green);
+  color: #000;
+  font-weight: 700;
+  font-size: 0.8rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.lasco-figure__frame:hover .lasco-figure__cta,
+.lasco-figure__frame:focus-visible .lasco-figure__cta {
+  opacity: 1;
+}
+
+.lasco-figure__meta {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dos líneas de alto fijo (fecha + aviso de hueco): el panel mide siempre lo mismo. */
+.lasco-figure__line {
+  height: 1.5em;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lasco-figure__line .gap-badge {
+  margin-left: 0;
+}
+
+.credit {
+  margin: 12px 0 0;
+  font-size: 0.75rem;
+}
+
+/* ── Gráficas ─────────────────────────────────────────────── */
+.chart {
+  position: relative;
+  width: 100%;
+}
+
+.chart svg {
+  display: block;
+  overflow: visible;
+  cursor: crosshair;
+  font-family: var(--font);
+}
+
+.chart__grid line {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.chart__axis text {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__ref line {
+  stroke: var(--text-secondary);
+  stroke-width: 1.5;
+}
+
+.chart__ref text {
+  fill: var(--text-secondary);
+  font-size: 11px;
+}
+
+.chart__line {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart__area {
+  fill: var(--series-1);
+  opacity: 0.08;
+}
+
+.chart__dot {
+  fill: var(--series-1);
+  stroke: var(--pane-bg);
+  stroke-width: 2;
+}
+
+.chart__dot--ghost {
+  fill: var(--text-primary);
+}
+
+.chart__label {
+  fill: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chart__selected {
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+}
+
+.chart__crosshair {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  min-width: 190px;
+  background: #000;
+  border: 1px solid var(--border-strong);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.tooltip__title {
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tooltip__row strong {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.tooltip__row span {
+  color: var(--text-secondary);
+}
+
+/* ── Tabla (datos.csv) ────────────────────────────────────── */
+.data-table summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  list-style: none;
+}
+
+.data-table summary::-webkit-details-marker {
+  display: none;
+}
+
+.data-table[open] summary {
+  margin-bottom: 10px;
+}
+
+.table-scroll {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--grid);
+}
+
+.data-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th,
+.data-table td {
+  padding: 4px 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table th:first-child,
+.data-table td:first-child {
+  text-align: left;
+}
+
+.data-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bar-bg);
+  color: var(--cyan);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table tbody tr:hover {
+  background: #071a0d;
+}
+
+/* Filtro ASCII de la escena 3D: canvas de texto sobre el WebGL (el mouse sigue llegando al WebGL). */
+.scene-ascii {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Línea de comando de la vista 3D con el selector de filtro a la derecha */
+.scene-cmd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin-bottom: 8px;
+}
+
+.scene-cmd .pane__cmd {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.scene-cmd__filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}

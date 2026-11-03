@@ -1,0 +1,34 @@
+"""Configuración del backend (variables de entorno con valores por defecto)."""
+
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = Path(os.environ.get("LASCO_DATA_DIR", BASE_DIR / "data"))
+IMAGES_DIR = DATA_DIR / "images"
+DB_PATH = DATA_DIR / "lasco.sqlite3"
+
+# Coronógrafos y su id de fuente en Helioviewer.
+INSTRUMENTS = {"c2": 4, "c3": 5}
+
+# Tamaños guardados por imagen: 512 px para el timelapse, 1024 px para la vista en pausa.
+SIZES = (512, 1024)
+
+# Ventana que se sincroniza al arrancar el servidor (o con `python -m app sync` sin argumentos).
+SYNC_HOURS = float(os.environ.get("LASCO_SYNC_HOURS", "24"))
+# Dónde termina la ventana: "ephemeris" = último instante con posición de SOHO publicada por JPL
+# (lo que muestra el panel), "now" = ahora.
+SYNC_UNTIL = os.environ.get("LASCO_SYNC_UNTIL", "ephemeris")
+SYNC_ON_START = os.environ.get("LASCO_SYNC_ON_START", "1") == "1"
+
+# Ventanas de hasta estas horas se sincronizan con TODAS las imágenes publicadas. En ventanas más largas
+# (si se indica un paso) solo se guarda la imagen más cercana a cada instante: 180 días completos serían
+# ~26.000 imágenes, mientras que muestreados cada 6 h son ~1.400.
+ALL_IMAGES_MAX_HOURS = float(os.environ.get("LASCO_ALL_IMAGES_MAX_HOURS", "48"))
+
+CONCURRENCY = int(os.environ.get("LASCO_CONCURRENCY", "6"))
+REQUEST_TIMEOUT = float(os.environ.get("LASCO_REQUEST_TIMEOUT", "25"))
+MAX_ATTEMPTS = 3
+
+HELIOVIEWER_API = "https://api.helioviewer.org/v2"
+HORIZONS_API = "https://ssd.jpl.nasa.gov/api/horizons.api"
