@@ -35,6 +35,23 @@ class EphemerisLimitError extends Error {
   }
 }
 
+// La conexión con JPL a veces falla de forma intermitente (el proxy responde 502/504 o se corta la red):
+// se reintenta hasta 3 veces con espera creciente antes de mostrar el error.
+const RETRYABLE = new Set([502, 503, 504])
+
+async function fetchWithRetry(url, attempts = 3) {
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+      if (res.ok) return res
+      if (!RETRYABLE.has(res.status) || i === attempts) throw new Error(`JPL Horizons respondió ${res.status}`)
+    } catch (err) {
+      if (i === attempts || err.message?.startsWith('JPL Horizons respondió')) throw err
+    }
+    await new Promise((r) => setTimeout(r, 1000 * i))
+  }
+}
+
 async function requestVectors(target, start, stop, stepMinutes) {
   const params = new URLSearchParams({
     format: 'json',
@@ -51,8 +68,7 @@ async function requestVectors(target, start, stop, stepMinutes) {
     OBJ_DATA: "'NO'",
   })
 
-  const res = await fetch(`${ENDPOINT}?${params}`)
-  if (!res.ok) throw new Error(`JPL Horizons respondió ${res.status}`)
+  const res = await fetchWithRetry(`${ENDPOINT}?${params}`)
   const body = await res.json()
   const text = body.result ?? ''
 
