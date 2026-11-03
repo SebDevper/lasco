@@ -999,8 +999,8 @@ input[type='range'] {
   background: #071a0d;
 }
 
-/* Filtro ASCII de la escena 3D: canvas de texto sobre el WebGL (el mouse sigue llegando al WebGL). */
-.scene-ascii {
+/* Filtros de dibujo de la escena 3D (ASCII, punteado): canvas sobre el WebGL (el mouse sigue llegando al WebGL). */
+.scene-filter {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -1017,7 +1017,8 @@ input[type='range'] {
 }
 
 .scene-cmd .pane__cmd {
-  flex: 1 1 260px;
+  /* Base amplia: si el selector de filtro no cabe al lado, pasa a la línea siguiente en vez de cortar el comando. */
+  flex: 1 1 460px;
   min-width: 0;
   margin-bottom: 0;
 }

@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 import { AU_KM } from '../lib/orbit.js'
-import { createAsciiLayer } from '../lib/ascii.js'
+import { createFilterLayer } from '../lib/filters.js'
 
 // ── Escala de la escena (no real) ────────────────────────────────────────────────
 // A escala real el Sol sería un punto: está a 215 radios solares de la Tierra y L1 a solo 1,5 M km de ella.
@@ -153,8 +153,9 @@ function buildScene(container) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   container.appendChild(renderer.domElement)
 
-  // Filtro ASCII: un canvas de texto encima del WebGL (que sigue recibiendo el mouse) y debajo de las etiquetas.
-  const ascii = createAsciiLayer(container)
+  // Filtros de dibujo (ASCII, punteado): un canvas encima del WebGL (que sigue recibiendo el mouse) y debajo
+  // de las etiquetas.
+  const drawFilter = createFilterLayer(container)
 
   const labelRenderer = new CSS2DRenderer()
   labelRenderer.domElement.className = 'scene-labels'
@@ -426,7 +427,7 @@ function buildScene(container) {
     if (!w || !h) return
     renderer.setSize(w, h)
     labelRenderer.setSize(w, h)
-    ascii.resize(w, h)
+    drawFilter.resize(w, h)
     camera.aspect = w / h
     camera.updateProjectionMatrix()
   }
@@ -480,7 +481,7 @@ function buildScene(container) {
     glow.material.opacity = (0.9 + Math.sin(t * 0.8) * 0.06) * (1 - overlayMat.opacity * 0.6)
 
     renderer.render(scene, camera)
-    ascii.render(renderer.domElement) // justo después de renderizar, mientras el buffer WebGL sigue disponible
+    drawFilter.render(renderer.domElement) // justo después de renderizar, mientras el buffer WebGL sigue disponible
     labelRenderer.render(scene, camera)
   })
 
@@ -491,9 +492,9 @@ function buildScene(container) {
     setMix(value) {
       mix = value
     },
-    /** 'off' | 'ascii' | 'ascii-color' */
+    /** 'off' | 'ascii' | 'ascii-color' | 'stipple' | 'stipple-color' */
     setFilter(mode) {
-      ascii.setMode(mode)
+      drawFilter.setMode(mode)
       renderer.domElement.style.opacity = mode === 'off' ? '' : '0'
     },
     dispose() {
@@ -509,7 +510,7 @@ function buildScene(container) {
       for (const tex of textures.values()) tex.dispose()
       renderer.dispose()
       renderer.domElement.remove()
-      ascii.dispose()
+      drawFilter.dispose()
       labelRenderer.domElement.remove()
     },
   }
@@ -520,7 +521,8 @@ function buildScene(container) {
  * `current`: instante seleccionado (describeSample). `track`: posiciones de SOHO relativas a la Tierra
  * en el sistema rotatorio, para dibujar la órbita halo. `view`: 'overview' | 'sun' | 'soho' | 'lasco'.
  * `lascoImage`: metadatos de la imagen LASCO a superponer en la vista 'lasco'; `mix`: su opacidad (0–1).
- * `filter`: 'off' | 'ascii' | 'ascii-color' — dibuja la escena con caracteres de texto.
+ * `filter`: 'off' | 'ascii' | 'ascii-color' | 'stipple' | 'stipple-color' — dibuja la escena con caracteres de texto
+ *   o con puntos.
  */
 export default function SunScene({ current, track, view, viewNonce, lascoImage, mix, filter = 'off' }) {
   const containerRef = useRef(null)

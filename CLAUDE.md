@@ -89,8 +89,9 @@ las efemérides, así que los instantes de distintos rangos coinciden (las cach�
   con `rsunPx` y desplazado con el píxel de referencia (`centerX/centerY`, origen arriba-izquierda) para que el radio
   solar de la imagen coincida con el Sol 3D. OrbitControls se desactiva en ese modo.
 - Las etiquetas son `CSS2DObject`: **no heredan la visibilidad del padre**, por eso se ocultan explícitamente.
-- Filtro ASCII (`src/lib/ascii.js`): canvas 2D entre el WebGL y las etiquetas; muestrea el canvas WebGL justo después
-  de `renderer.render` en el mismo frame (no hay `preserveDrawingBuffer`).
+- Filtros de dibujo (`src/lib/filters.js`: ASCII y punteado, en verde o a color): canvas 2D entre el WebGL y las
+  etiquetas; muestrea el canvas WebGL justo después de `renderer.render` en el mismo frame (no hay
+  `preserveDrawingBuffer`). El punteado acumula los puntos en `Path2D` (uno por tono) y rellena una vez por tono.
 
 ### UI / estilo
 

@@ -31,11 +31,15 @@ const VIEWS = [
   { id: 'soho', label: 'soho+l1' },
   { id: 'lasco', label: 'lasco' },
 ]
-// Filtros de la vista 3D: dibujarla con caracteres de texto (ASCII), en verde o con los colores reales.
+// Filtros de la vista 3D: dibujarla con caracteres de texto (ASCII, en verde o con los colores reales)
+// o como un dibujo punteado.
+// `flag`: cómo aparece en la línea de comando de la vista (--filtro …).
 const FILTERS = [
   { id: 'off', label: 'normal' },
-  { id: 'ascii', label: 'ascii' },
-  { id: 'ascii-color', label: 'ascii color' },
+  { id: 'ascii', label: 'ascii', flag: 'ascii' },
+  { id: 'ascii-color', label: 'ascii color', flag: 'ascii-color' },
+  { id: 'stipple', label: 'punteado', flag: 'punteado' },
+  { id: 'stipple-color', label: 'punteado color', flag: 'punteado-color' },
 ]
 const FILTER_KEY = 'lasco_test.filtro3d'
 
@@ -261,7 +265,7 @@ export default function Dashboard() {
     (inLascoView
       ? `./vista --modo lasco --coronografo ${instrument}`
       : `./vista --modo ${VIEWS.find((v) => v.id === view.id).label}`) +
-    (filter !== 'off' ? ` --filtro ${filter}` : '')
+    (filter !== 'off' ? ` --filtro ${FILTERS.find((f) => f.id === filter).flag}` : '')
 
   return (
     <main className="dashboard">
