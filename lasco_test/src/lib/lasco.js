@@ -224,3 +224,83 @@ export function useLascoImages(time, delay = 400) {
 
   return state
 }
+
+// ── Detalle al pausar: encabezado FITS y eventos solares (vía backend) ──────────
+
+const headerCache = new Map()
+
+/** Encabezado FITS resumido de una imagen (exposición, filtro, campo, orientación de SOHO…). */
+export function fetchImageHeader(id) {
+  if (!headerCache.has(id)) {
+    const p = backendJson(`/images/${id}/header`)
+    headerCache.set(id, p)
+    p.catch(() => headerCache.delete(id))
+  }
+  return headerCache.get(id)
+}
+
+const eventsCache = new Map()
+const toDate = (v) => (v ? new Date(v) : null)
+
+/** CME (CACTus) y fulguraciones (GOES) del HEK que se solapan con [start, end]. */
+export function fetchEvents(start, end) {
+  const key = `${start.getTime()}-${end.getTime()}`
+  if (!eventsCache.has(key)) {
+    const p = backendJson(`/events?start=${isoSeconds(start)}&end=${isoSeconds(end)}`).then((d) => ({
+      error: d.error,
+      events: d.events.map((e) => ({ ...e, start: toDate(e.start), end: toDate(e.end), peak: toDate(e.peak) })),
+    }))
+    eventsCache.set(key, p)
+    p.catch(() => eventsCache.delete(key))
+  }
+  return eventsCache.get(key)
+}
+
+/** ¿La CME estaba en el campo de LASCO cuando se tomó la imagen? (CACTus da su primera y última detección.) */
+export const cmeVisibleAt = (cme, time) => cme.start - 15 * 60_000 <= time && time <= cme.end.getTime() + 15 * 60_000
+
+export const EVENTS_WINDOW_H = 6
+
+/**
+ * Detalle de las imágenes del instante `time`, solo con el timelapse en pausa: encabezados FITS de C2 y C3 y
+ * eventos solares ±EVENTS_WINDOW_H horas. Mientras se reproduce devuelve { paused: false }.
+ */
+export function useLascoDetails(lasco, time, paused, delay = 300) {
+  const [state, setState] = useState({ paused, headers: {}, events: null, eventsError: null, loading: false })
+  const ts = time?.getTime()
+  const c2 = lasco.c2?.id
+  const c3 = lasco.c3?.id
+
+  useEffect(() => {
+    if (!paused || ts == null) {
+      setState((s) => ({ ...s, paused: false }))
+      return
+    }
+    let cancelled = false
+    setState((s) => ({ ...s, paused: true, loading: true }))
+    const id = setTimeout(async () => {
+      // Ventana redondeada a la hora: instantes cercanos comparten la misma consulta (y su caché).
+      const hour = Math.round(ts / 3_600_000) * 3_600_000
+      const win = EVENTS_WINDOW_H * 3_600_000
+      const [h2, h3, ev] = await Promise.allSettled([
+        c2 ? fetchImageHeader(c2) : null,
+        c3 ? fetchImageHeader(c3) : null,
+        fetchEvents(new Date(hour - win), new Date(hour + win)),
+      ])
+      if (cancelled) return
+      setState({
+        paused: true,
+        loading: false,
+        headers: { c2: h2.value ?? null, c3: h3.value ?? null },
+        events: ev.status === 'fulfilled' ? ev.value.events : null,
+        eventsError: ev.status === 'fulfilled' ? ev.value.error : ev.reason?.message,
+      })
+    }, delay)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [paused, ts, c2, c3, delay])
+
+  return state
+}

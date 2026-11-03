@@ -3,6 +3,8 @@
   GET  /api/status                 estado de la sincronización, imágenes en disco y ventanas cubiertas
   GET  /api/images?start=&end=     imágenes guardadas en un rango (opcional: instrument=c2|c3)
   GET  /api/images/closest?instrument=&date=   imagen guardada más cercana a una fecha
+  GET  /api/images/{id}/header    encabezado FITS resumido de una imagen (exposición, filtro, campo…)
+  GET  /api/events?start=&end=     CME (CACTus) y fulguraciones (GOES) del HEK en una ventana (máx. 7 días)
   POST /api/sync                   sincroniza una ventana en segundo plano: {start, end, stepMinutes} o {hours, until}
                                    (hasta 48 h: todas las imágenes; más largas: una por instante de la línea de tiempo)
   GET  /api/files/{c2|c3}/{id}_{512|1024}.jpg  archivos de imagen
@@ -11,13 +13,18 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, HTTPException, Query
+import xml.etree.ElementTree as ET
+
+import httpx
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import helioviewer
 from .config import IMAGES_DIR, INSTRUMENTS, SIZES, SYNC_HOURS, SYNC_ON_START, SYNC_UNTIL
+from .events import events_between
 from .store import Store, from_ms
 from .sync import Syncer, choose_mode, default_window, new_client
 
@@ -126,6 +133,29 @@ def closest_image(instrument: str = Query(..., pattern="^(c2|c3)$"), date: str =
     if not row:
         raise HTTPException(404, "No hay imágenes guardadas")
     return _image_json(row)
+
+
+@app.get("/api/images/{image_id}/header")
+async def image_header(image_id: str = Path(..., pattern=r"^\d+$")):
+    cached = store.get_header(image_id)
+    if cached:
+        return cached
+    async with new_client() as client:
+        try:
+            header = await helioviewer.jp2_header(client, image_id)
+        except (httpx.HTTPError, ET.ParseError) as exc:
+            raise HTTPException(502, f"No se pudo obtener el encabezado de Helioviewer: {exc}") from exc
+    store.save_header(image_id, header)
+    return header
+
+
+@app.get("/api/events")
+async def events(start: str, end: str):
+    a, b = _parse(start), _parse(end)
+    if not timedelta(0) < b - a <= timedelta(days=7):
+        raise HTTPException(422, "La ventana debe durar entre 0 y 7 días")
+    async with new_client() as client:
+        return await events_between(store, client, a, b)
 
 
 class SyncRequest(BaseModel):

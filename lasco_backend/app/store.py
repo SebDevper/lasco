@@ -1,5 +1,6 @@
 """Índice SQLite de imágenes descargadas y de las ventanas de tiempo ya sincronizadas."""
 
+import json
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -37,6 +38,26 @@ CREATE TABLE IF NOT EXISTS samples (
     time_ms     INTEGER NOT NULL,
     image_id    TEXT NOT NULL,
     PRIMARY KEY (instrument, time_ms)
+);
+
+-- Encabezados FITS ya consultados (resumen en JSON).
+CREATE TABLE IF NOT EXISTS headers (
+    id    TEXT PRIMARY KEY,
+    data  TEXT NOT NULL
+);
+
+-- Eventos solares del HEK (CME, fulguraciones) y días UTC ya consultados.
+CREATE TABLE IF NOT EXISTS events (
+    id        TEXT PRIMARY KEY,
+    type      TEXT NOT NULL,
+    start_ms  INTEGER NOT NULL,
+    end_ms    INTEGER NOT NULL,
+    data      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_by_time ON events (start_ms, end_ms);
+CREATE TABLE IF NOT EXISTS event_days (
+    day         TEXT PRIMARY KEY,
+    fetched_ms  INTEGER NOT NULL
 );
 """
 
@@ -165,3 +186,44 @@ class Store:
             else:
                 spans.append([r["start_ms"], r["end_ms"]])
         return {inst: [(from_ms(a), from_ms(b)) for a, b in spans] for inst, spans in merged.items()}
+
+    # ── Encabezados FITS ────────────────────────────────────────────────────
+    def get_header(self, image_id: str) -> dict | None:
+        with self._lock:
+            row = self._db.execute("SELECT data FROM headers WHERE id = ?", (image_id,)).fetchone()
+        return json.loads(row["data"]) if row else None
+
+    def save_header(self, image_id: str, header: dict) -> None:
+        with self._lock, self._db:
+            self._db.execute("INSERT OR REPLACE INTO headers VALUES (?, ?)", (image_id, json.dumps(header)))
+
+    # ── Eventos solares (HEK) ───────────────────────────────────────────────
+    def event_day_fetched(self, day: str) -> int | None:
+        with self._lock:
+            row = self._db.execute("SELECT fetched_ms FROM event_days WHERE day = ?", (day,)).fetchone()
+        return row["fetched_ms"] if row else None
+
+    def save_events(self, day: str, events: list[dict], fetched_ms: int) -> None:
+        """Guarda los eventos de un día (reemplaza versiones anteriores: el HEK revisa sus catálogos)."""
+        with self._lock, self._db:
+            for e in events:
+                self._db.execute(
+                    "INSERT OR REPLACE INTO events VALUES (?, ?, ?, ?, ?)",
+                    (e["id"], e["type"], to_ms(e["start"]), to_ms(e["end"]), json.dumps(e, default=_iso_default)),
+                )
+            self._db.execute("INSERT OR REPLACE INTO event_days VALUES (?, ?)", (day, fetched_ms))
+
+    def list_events(self, start: datetime, end: datetime) -> list[dict]:
+        """Eventos cuyo intervalo [inicio, fin] se solapa con [start, end]."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT data FROM events WHERE start_ms <= ? AND end_ms >= ? ORDER BY start_ms",
+                (to_ms(end), to_ms(start)),
+            ).fetchall()
+        return [json.loads(r["data"]) for r in rows]
+
+
+def _iso_default(value):
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    raise TypeError(f"No serializable: {type(value)}")

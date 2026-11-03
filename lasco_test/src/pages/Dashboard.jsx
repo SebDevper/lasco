@@ -232,6 +232,7 @@ export default function Dashboard() {
 
   const cur = samples[Math.min(selected, samples.length - 1)]
   const track = useMemo(() => samples.map((s) => s.relEarth), [samples])
+  const timeline = useMemo(() => samples.map((s) => s.time), [samples])
   const rowStride = Math.max(1, Math.round(range.rowEvery / range.stepMinutes))
   const dailyRows = useMemo(
     () => samples.filter((_, i) => i % rowStride === 0 || i === samples.length - 1),
@@ -566,7 +567,17 @@ export default function Dashboard() {
 
         {cur && (
           <>
-            <LascoImages lasco={lasco} time={cur.time} onOpen={openLascoView} />
+            <LascoImages
+              lasco={lasco}
+              time={cur.time}
+              onOpen={openLascoView}
+              paused={!playing}
+              timeline={timeline}
+              onJump={(i) => {
+                setPlaying(false)
+                setSelected(i)
+              }}
+            />
 
             <Pane
               id={5}

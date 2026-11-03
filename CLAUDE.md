@@ -58,7 +58,11 @@ En contenedores no hay servidor de Vite: `lasco_test/nginx.conf.template` hace l
    `/api/lasco` → `127.0.0.1:8000/api`. «actualizar» hace `POST /api/sync` con el rango visible, sigue
    `/api/status` cada 2 s y al terminar carga las imágenes. Solo se usan imágenes del backend para instantes dentro de
    sus ventanas `coverage`.
-4. **Timelapse** — `prefetchFrames()` guarda en memoria (Map de blob URLs a nivel de módulo) una imagen de 512 px por
+4. **Detalle al pausar** — `useLascoDetails()` (solo con el timelapse en pausa) pide al backend el encabezado FITS
+   de cada imagen (`/api/images/{id}/header`) y los eventos ±6 h (`/api/events`: CME de CACTus y fulguraciones GOES
+   del HEK). `LascoImages.jsx` dibuja sobre la imagen el sector de cada CME visible: con el norte solar arriba, el
+   ángulo de posición crece hacia el este (izquierda), punto = (cx − r·sen AP, cy − r·cos AP).
+5. **Timelapse** — `prefetchFrames()` guarda en memoria (Map de blob URLs a nivel de módulo) una imagen de 512 px por
    instante y coronógrafo; durante la reproducción se usan esas, y al pausar `useLascoImages` carga la de 1024 px.
    Ojo: HMR de `lasco.js` reinicia esos Map.
 
@@ -73,8 +77,12 @@ las efemérides, así que los instantes de distintos rangos coinciden (las cach�
   `getJPX?verbose=true`); ventanas más largas con `stepMinutes` bajan solo la más cercana a cada instante (tabla
   `samples`). Una sincronización a la vez (409 si hay otra). Reintentos ×3 con timeout: Helioviewer a veces deja
   peticiones colgadas.
-- `store.py`: SQLite (`images`, `coverage` con `step_ms`, `samples`) + JPG en `data/images/{c2,c3}/{id}_{512|1024}.jpg`.
+- `store.py`: SQLite (`images`, `coverage` con `step_ms`, `samples`, `headers`, `events`, `event_days`) + JPG en
+  `data/images/{c2,c3}/{id}_{512|1024}.jpg`.
   Tiene una migración ligera en `Store.__init__`; mantenerla al tocar el esquema.
+- `hek.py` / `events.py`: eventos del HEK (LMSAL) cacheados por día UTC; los últimos 3 días se vuelven a consultar
+  cada hora (el HEK revisa sus catálogos). Las fulguraciones repetidas entre catálogos se fusionan (clase de SWPC,
+  posición de SDO). `helioviewer.jp2_header()` resume el encabezado FITS.
 - Ventana por defecto: 24 h terminando en el fin de las efemérides de SOHO (`LASCO_SYNC_UNTIL=ephemeris`), para
   coincidir con la pestaña 24h. Configuración por variables de entorno en `config.py` (ver `README.md`).
 

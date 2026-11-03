@@ -60,6 +60,8 @@ recientes; con `LASCO_SYNC_UNTIL=now` termina ahora.
 | GET | `/api/status` | progreso de la sincronización, imágenes en disco y ventanas completas |
 | GET | `/api/images?start=&end=[&instrument=c2\|c3]` | imágenes guardadas en un rango |
 | GET | `/api/images/closest?instrument=&date=` | imagen guardada más cercana a una fecha |
+| GET | `/api/images/{id}/header` | encabezado FITS resumido (exposición, filtro, campo, orientación de SOHO, calidad); se cachea |
+| GET | `/api/events?start=&end=` | CME (CACTus) y fulguraciones (GOES) del HEK que se solapan con la ventana (máx. 7 días); caché por día |
 | POST | `/api/sync` | sincroniza en segundo plano; cuerpo `{"start", "end", "stepMinutes"}` o `{"hours", "until"}` (409 si ya hay una en curso) |
 | GET | `/api/files/{c2\|c3}/{id}_{512\|1024}.jpg` | archivos de imagen |
 

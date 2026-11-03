@@ -1,5 +1,6 @@
 """Cliente de la API de Helioviewer para imágenes LASCO."""
 
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -54,6 +55,52 @@ async def closest_image(client: httpx.AsyncClient, instrument: str, source_id: i
         center_x=float(m["refPixelX"]),
         center_y=float(m["height"]) - float(m["refPixelY"]),
     )
+
+
+def _num(value: str | None) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def _int(value: str | None) -> int | None:
+    n = _num(value)
+    return int(n) if n is not None else None
+
+
+async def jp2_header(client: httpx.AsyncClient, image_id: str) -> dict:
+    """Encabezado FITS de una imagen (getJP2Header), reducido a los campos que muestra el panel."""
+    res = await client.get(f"{HELIOVIEWER_API}/getJP2Header/", params={"id": image_id})
+    res.raise_for_status()
+    root = ET.fromstring(res.text)
+    h = {el.tag: (el.text or "").strip() for el in root.iter() if len(el) == 0 and el.text}
+
+    observed = None
+    if h.get("DATE_OBS") and h.get("TIME_OBS"):
+        observed = datetime.strptime(f"{h['DATE_OBS']} {h['TIME_OBS'][:8]}", "%Y/%m/%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+    return {
+        "observedAt": observed.isoformat().replace("+00:00", "Z") if observed else None,
+        "detector": h.get("DETECTOR"),
+        "exposure": _num(h.get("EXPTIME")),  # s, ya corregida
+        "filter": h.get("FILTER"),
+        "polarizer": h.get("POLAR"),
+        # Rotación de la imagen original respecto del norte solar ≈ orientación de SOHO (±180° tras sus giros).
+        "roll": _num(h.get("CROTA") or h.get("CROTA1")),
+        "plateScale": _num(h.get("CDELT1") or h.get("PLATESCL")),  # segundos de arco por píxel (1024 px)
+        "fieldInner": _num(h.get("HV_ROCC_INNER")),  # radios solares
+        "fieldOuter": _num(h.get("HV_ROCC_OUTER")),
+        "binning": f"{h.get('LEBXSUM', '1')}×{h.get('LEBYSUM', '1')}",
+        "readPort": h.get("READPORT"),
+        "compression": h.get("COMPRSSN"),
+        "file": h.get("FILENAME"),
+        "fileOrig": h.get("FILEORIG"),
+        "quicklook": h.get("HV_QUICKLOOK", "").upper() == "TRUE",
+        "missingBlocks": _int(h.get("NMISSING")),
+        "saturated": _int(h.get("DATASAT")),
+    }
 
 
 async def download_image(client: httpx.AsyncClient, meta: ImageMeta, size: int) -> bytes:
