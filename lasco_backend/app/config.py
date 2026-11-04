@@ -26,6 +26,13 @@ SYNC_ON_START = os.environ.get("LASCO_SYNC_ON_START", "1") == "1"
 # ~26.000 imágenes, mientras que muestreados cada 6 h son ~1.400.
 ALL_IMAGES_MAX_HOURS = float(os.environ.get("LASCO_ALL_IMAGES_MAX_HOURS", "48"))
 
+# Retención: al terminar cada sincronización se borra lo anterior a (fin de la ventana más reciente − estos días),
+# es decir, lo que ya no cabe en el rango más largo del panel (180d). 0 = no borrar nunca.
+RETENTION_DAYS = float(os.environ.get("LASCO_RETENTION_DAYS", "180"))
+# Margen extra: si una ventana termina "now" y no en el fin de las efemérides (que va ~1 día atrás), el primer
+# día del rango de 180d del panel no debe borrarse y volver a descargarse en cada sincronización.
+RETENTION_MARGIN_DAYS = 2
+
 CONCURRENCY = int(os.environ.get("LASCO_CONCURRENCY", "6"))
 REQUEST_TIMEOUT = float(os.environ.get("LASCO_REQUEST_TIMEOUT", "25"))
 MAX_ATTEMPTS = 3

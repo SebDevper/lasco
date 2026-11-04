@@ -77,6 +77,11 @@ las efemérides, así que los instantes de distintos rangos coinciden (las cach�
   `getJPX?verbose=true`); ventanas más largas con `stepMinutes` bajan solo la más cercana a cada instante (tabla
   `samples`). Una sincronización a la vez (409 si hay otra). Reintentos ×3 con timeout: Helioviewer a veces deja
   peticiones colgadas.
+- Retención: al final de cada `Syncer.run` (botón «actualizar», arranque o CLI) `Store.prune()` borra lo anterior a
+  (fin de la ventana más reciente − `LASCO_RETENTION_DAYS` (180) − 2 días): imágenes y sus archivos, encabezados,
+  `samples`, eventos, y recorta `coverage` (las muestreadas, alineadas a su malla). No borra una imagen anterior al
+  corte si un instante muestreado posterior todavía la usa. `run()` recorta el inicio de la ventana al mismo corte para no
+  descargar lo que se borraría. Si se agrega un rango más largo en `RANGES`, subir el valor.
 - `store.py`: SQLite (`images`, `coverage` con `step_ms`, `samples`, `headers`, `events`, `event_days`) + JPG en
   `data/images/{c2,c3}/{id}_{512|1024}.jpg`.
   Tiene una migración ligera en `Store.__init__`; mantenerla al tocar el esquema.

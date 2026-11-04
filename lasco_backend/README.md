@@ -12,6 +12,11 @@ descargarlas cada vez.
 - Cada imagen se guarda en 512 px (timelapse) y 1024 px (vista en pausa), con el norte solar arriba.
 - Guarda los JPG en `data/images/{c2,c3}/` y un índice SQLite en `data/lasco.sqlite3`.
 - Lo ya descargado no se vuelve a pedir.
+- **Retención**: al terminar cada sincronización (el botón «actualizar» del panel, la del arranque o
+  `python -m app sync`) se borra lo anterior a `LASCO_RETENTION_DAYS` (180, el rango más largo del panel) + 2 días
+  de margen, contados desde el fin de la ventana sincronizada más reciente: imágenes, encabezados, instantes
+  muestreados, eventos y el tramo de las ventanas que queda fuera. Así el disco no crece sin límite.
+  Tampoco se descarga lo que quedaría fuera: si se pide una ventana más antigua, se recorta al límite.
 
 ## Instalación
 
@@ -49,6 +54,7 @@ recientes; con `LASCO_SYNC_UNTIL=now` termina ahora.
 | `LASCO_SYNC_UNTIL` | `ephemeris` | fin de la ventana: `ephemeris`, `now` o una fecha ISO |
 | `LASCO_SYNC_ON_START` | `1` | sincronizar al arrancar el servidor |
 | `LASCO_ALL_IMAGES_MAX_HOURS` | `48` | hasta esta duración se bajan todas las imágenes; por encima, una por instante |
+| `LASCO_RETENTION_DAYS` | `180` | días que se conservan (+2 de margen) desde la ventana más reciente; `0` = no borrar |
 | `LASCO_CONCURRENCY` | `6` | descargas en paralelo |
 | `LASCO_REQUEST_TIMEOUT` | `25` | segundos por petición (se reintenta hasta 3 veces) |
 | `LASCO_DATA_DIR` | `./data` | carpeta de imágenes e índice |

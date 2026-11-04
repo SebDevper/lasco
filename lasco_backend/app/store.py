@@ -187,6 +187,54 @@ class Store:
                 spans.append([r["start_ms"], r["end_ms"]])
         return {inst: [(from_ms(a), from_ms(b)) for a, b in spans] for inst, spans in merged.items()}
 
+    def coverage_end(self) -> datetime | None:
+        """Fin de la ventana sincronizada más reciente (de cualquier coronógrafo)."""
+        with self._lock:
+            row = self._db.execute("SELECT MAX(end_ms) AS end_ms FROM coverage").fetchone()
+        return from_ms(row["end_ms"]) if row["end_ms"] is not None else None
+
+    # ── Retención ───────────────────────────────────────────────────────────
+    def prune(self, cutoff: datetime) -> dict[str, int]:
+        """Borra imágenes (archivos e índice), instantes muestreados, ventanas y eventos anteriores a `cutoff`.
+
+        No borra una imagen anterior al corte si todavía es la asignada a un instante muestreado posterior
+        (la más cercana a un instante puede ser de unos minutos antes): si no, se volvería a descargar.
+        """
+        ms = to_ms(cutoff)
+        with self._lock, self._db:
+            doomed = self._db.execute(
+                "SELECT id, instrument FROM images WHERE time_ms < ?"
+                " AND id NOT IN (SELECT image_id FROM samples WHERE time_ms >= ?)",
+                (ms, ms),
+            ).fetchall()
+            for r in doomed:
+                self._db.execute("DELETE FROM images WHERE id = ?", (r["id"],))
+                self._db.execute("DELETE FROM headers WHERE id = ?", (r["id"],))
+            samples = self._db.execute("DELETE FROM samples WHERE time_ms < ?", (ms,)).rowcount
+
+            # Ventanas: las que terminan antes del corte se borran; las que lo cruzan empiezan en él (en las
+            # muestreadas, en el primer instante de su malla que quede después del corte).
+            windows = 0
+            for r in self._db.execute(
+                "SELECT rowid, start_ms, end_ms, step_ms FROM coverage WHERE start_ms < ?", (ms,)
+            ).fetchall():
+                step = r["step_ms"]
+                start = ms if not step else r["start_ms"] + -(-(ms - r["start_ms"]) // step) * step
+                if start > r["end_ms"]:
+                    self._db.execute("DELETE FROM coverage WHERE rowid = ?", (r["rowid"],))
+                    windows += 1
+                else:
+                    self._db.execute("UPDATE coverage SET start_ms = ? WHERE rowid = ?", (start, r["rowid"]))
+
+            events = self._db.execute("DELETE FROM events WHERE end_ms < ?", (ms,)).rowcount
+            self._db.execute("DELETE FROM event_days WHERE day < ?", (cutoff.date().isoformat(),))
+
+        # Los archivos, después de sacarlos del índice: nada los vuelve a ofrecer mientras se borran.
+        for r in doomed:
+            for size in SIZES:
+                image_path(r["instrument"], r["id"], size).unlink(missing_ok=True)
+        return {"images": len(doomed), "samples": samples, "windows": windows, "events": events}
+
     # ── Encabezados FITS ────────────────────────────────────────────────────
     def get_header(self, image_id: str) -> dict | None:
         with self._lock:

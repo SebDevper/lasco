@@ -19,6 +19,8 @@ from .config import (
     INSTRUMENTS,
     MAX_ATTEMPTS,
     REQUEST_TIMEOUT,
+    RETENTION_DAYS,
+    RETENTION_MARGIN_DAYS,
     SIZES,
     SYNC_HOURS,
     SYNC_UNTIL,
@@ -41,6 +43,7 @@ class SyncState:
     downloaded: int = 0
     skipped: int = 0
     failed: int = 0
+    pruned: int = 0  # imágenes borradas por la retención al terminar
     error: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -102,6 +105,12 @@ class Syncer:
             raise RuntimeError("Ya hay una sincronización en curso")
         async with self._lock:
             mode = choose_mode(start, end, step_minutes)
+            # No descargar lo que la retención borraría al terminar. La malla de instantes muestreados se mantiene.
+            cutoff = self._retention_cutoff(end)
+            if cutoff and start < cutoff:
+                step = timedelta(minutes=step_minutes) if mode == "sampled" else None
+                start = cutoff if not step else start + -(-(cutoff - start) // step) * step
+                log.info("Retención: la ventana empieza en %s (lo anterior no se conserva)", start.isoformat())
             self.state = SyncState(
                 running=True,
                 mode=mode,
@@ -111,24 +120,58 @@ class Syncer:
                 started_at=datetime.now(timezone.utc),
             )
             try:
-                async with new_client() as client:
-                    if mode == "sampled":
-                        await self._run_sampled(client, start, end, step_minutes)
+                try:
+                    if start > end:
+                        log.info("La ventana es anterior a la retención: no hay nada que descargar")
                     else:
-                        await self._run_all(client, start, end)
-            except Exception as exc:  # noqa: BLE001 — se informa en /api/status
-                log.exception("Sincronización fallida")
-                self.state.error = str(exc)
+                        await self._download(mode, start, end, step_minutes)
+                except Exception as exc:  # noqa: BLE001 — se informa en /api/status
+                    log.exception("Sincronización fallida")
+                    self.state.error = str(exc)
+                # Retención: aunque la descarga haya fallado, lo antiguo sigue sobrando.
+                try:
+                    await self._prune()
+                except Exception as exc:  # noqa: BLE001
+                    log.exception("Falló la limpieza de imágenes antiguas")
+                    self.state.error = self.state.error or f"limpieza: {exc}"
             finally:
                 self.state.running = False
                 self.state.finished_at = datetime.now(timezone.utc)
                 self._in_flight.clear()
             s = self.state
             log.info(
-                "Sincronización %s %s → %s: %d descargadas, %d ya estaban, %d fallidas",
-                mode, start.isoformat(), end.isoformat(), s.downloaded, s.skipped, s.failed,
+                "Sincronización %s %s → %s: %d descargadas, %d ya estaban, %d fallidas, %d borradas por antigüedad",
+                mode, start.isoformat(), end.isoformat(), s.downloaded, s.skipped, s.failed, s.pruned,
             )
             return s
+
+    async def _download(self, mode: str, start: datetime, end: datetime, step_minutes: float | None) -> None:
+        async with new_client() as client:
+            if mode == "sampled":
+                await self._run_sampled(client, start, end, step_minutes)
+            else:
+                await self._run_all(client, start, end)
+
+    def _retention_cutoff(self, end: datetime | None = None) -> datetime | None:
+        """Lo anterior a este instante sobra: retención (+ margen) contada desde la ventana más reciente."""
+        if RETENTION_DAYS <= 0:
+            return None
+        newest = max((t for t in (self.store.coverage_end(), end) if t is not None), default=None)
+        return newest - timedelta(days=RETENTION_DAYS + RETENTION_MARGIN_DAYS) if newest else None
+
+    async def _prune(self) -> None:
+        """Borra lo que quedó fuera del rango más largo del panel, contado desde la ventana más reciente."""
+        cutoff = self._retention_cutoff()
+        if cutoff is None:
+            return
+        removed = await asyncio.to_thread(self.store.prune, cutoff)
+        self.state.pruned = removed["images"]
+        if any(removed.values()):
+            log.info(
+                "Retención (%g días, anterior a %s): %d imágenes, %d instantes, %d ventanas y %d eventos borrados",
+                RETENTION_DAYS, cutoff.isoformat(), removed["images"], removed["samples"], removed["windows"],
+                removed["events"],
+            )
 
     # ── Descarga de una imagen (sin duplicar si dos instantes comparten imagen) ──
     async def _ensure(self, client: httpx.AsyncClient, meta: ImageMeta) -> bool:

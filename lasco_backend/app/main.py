@@ -7,6 +7,7 @@
   GET  /api/events?start=&end=     CME (CACTus) y fulguraciones (GOES) del HEK en una ventana (máx. 7 días)
   POST /api/sync                   sincroniza una ventana en segundo plano: {start, end, stepMinutes} o {hours, until}
                                    (hasta 48 h: todas las imágenes; más largas: una por instante de la línea de tiempo)
+                                   y al terminar borra lo anterior a la retención (LASCO_RETENTION_DAYS)
   GET  /api/files/{c2|c3}/{id}_{512|1024}.jpg  archivos de imagen
 """
 
@@ -23,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import helioviewer
-from .config import IMAGES_DIR, INSTRUMENTS, SIZES, SYNC_HOURS, SYNC_ON_START, SYNC_UNTIL
+from .config import IMAGES_DIR, INSTRUMENTS, RETENTION_DAYS, SIZES, SYNC_HOURS, SYNC_ON_START, SYNC_UNTIL
 from .events import events_between
 from .store import Store, from_ms
 from .sync import Syncer, choose_mode, default_window, new_client
@@ -108,6 +109,7 @@ def status():
             "downloaded": s.downloaded,
             "skipped": s.skipped,
             "failed": s.failed,
+            "pruned": s.pruned,
             "error": s.error,
             "startedAt": _iso(s.started_at),
             "finishedAt": _iso(s.finished_at),
@@ -117,7 +119,7 @@ def status():
             for inst, v in store.stats().items()
         },
         "coverage": {inst: [[_iso(a), _iso(b)] for a, b in spans] for inst, spans in store.coverage().items()},
-        "config": {"syncHours": SYNC_HOURS, "syncUntil": SYNC_UNTIL},
+        "config": {"syncHours": SYNC_HOURS, "syncUntil": SYNC_UNTIL, "retentionDays": RETENTION_DAYS},
     }
 
 

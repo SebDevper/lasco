@@ -11,6 +11,8 @@ services:
       # Ventana que se sincroniza al arrancar (ver lasco_backend/README.md).
       LASCO_SYNC_HOURS: "24"
       LASCO_SYNC_UNTIL: ephemeris
+      # Al terminar cada sincronización se borra lo que tenga más de estos días (+2 de margen); 0 = nunca.
+      LASCO_RETENTION_DAYS: "180"
     volumes:
       - lasco_data:/data
     restart: unless-stopped

@@ -15,7 +15,8 @@ async def _sync(hours: float, until: str) -> int:
     state = await Syncer(Store()).run(start, end)
     print(
         f"{start:%Y-%m-%d %H:%M} → {end:%Y-%m-%d %H:%M} UTC: "
-        f"{state.downloaded} descargadas, {state.skipped} ya estaban, {state.failed} fallidas"
+        f"{state.downloaded} descargadas, {state.skipped} ya estaban, {state.failed} fallidas, "
+        f"{state.pruned} borradas por antigüedad"
     )
     return 1 if state.error or state.failed else 0
 

@@ -101,6 +101,7 @@ function BackendLine({ backend }) {
       backend lasco · {fmtInt(count)} imágenes en disco
       {spans.length ? ` · cubre ${spans.map(span).join(', ')}` : ' · sin ventanas completas'}
       {sync.failed ? ` · ${fmtInt(sync.failed)} fallaron en la última sincronización` : ''}
+      {sync.pruned ? ` · ${fmtInt(sync.pruned)} borradas por tener más de ${backend.config.retentionDays} días` : ''}
     </div>
   )
 }
@@ -180,6 +181,8 @@ export default function Dashboard() {
 
   // Mientras el backend sincroniza: consultar su estado cada 2 s y, al terminar, cargar lo nuevo.
   const backendSyncing = Boolean(backend?.sync?.running)
+  // Días que el backend conserva (LASCO_RETENTION_DAYS); 0 = sin límite.
+  const retentionDays = backend?.config?.retentionDays ?? 0
   useEffect(() => {
     if (!backendSyncing) return
     const id = setInterval(async () => {
@@ -345,8 +348,10 @@ export default function Dashboard() {
                   </div>
                   {coverage.count < samples.length && !backendSyncing && (
                     <div>
-                      <span className="tag tag--muted">[info]</span> el backend aún no tiene imágenes para todo el rango ·
-                      ejecuta «actualizar» para que las descargue
+                      <span className="tag tag--muted">[info]</span>{' '}
+                      {retentionDays > 0 && retentionDays < range.days
+                        ? `el backend solo conserva los últimos ${retentionDays} días · el resto del rango queda sin imagen`
+                        : 'el backend aún no tiene imágenes para todo el rango · ejecuta «actualizar» para que las descargue'}
                     </div>
                   )}
                 </>
