@@ -7,12 +7,15 @@
   GET  /api/events?start=&end=     CME (CACTus) y fulguraciones (GOES) del HEK en una ventana (máx. 7 días)
   POST /api/sync                   sincroniza una ventana en segundo plano: {start, end, stepMinutes} o {hours, until}
                                    (hasta 48 h: todas las imágenes; más largas: una por instante de la línea de tiempo)
-                                   y al terminar borra lo anterior a la retención (LASCO_RETENTION_DAYS)
+                                   y al terminar borra lo anterior a la retención (LASCO_RETENTION_DAYS).
+                                   Pública: solo acepta las ventanas que pide el panel (límites en config.py);
+                                   422 si no, 409 si hay otra en curso, 429 si la anterior acaba de terminar
   GET  /api/files/{c2|c3}/{id}_{512|1024}.jpg  archivos de imagen
 """
 
 import asyncio
 import logging
+import math
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -24,7 +27,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import helioviewer
-from .config import IMAGES_DIR, INSTRUMENTS, RETENTION_DAYS, SIZES, SYNC_HOURS, SYNC_ON_START, SYNC_UNTIL
+from .config import (
+    ALL_IMAGES_MAX_HOURS,
+    IMAGES_DIR,
+    INSTRUMENTS,
+    RETENTION_DAYS,
+    SIZES,
+    SYNC_ALL_RECENT_HOURS,
+    SYNC_COOLDOWN_SECONDS,
+    SYNC_HOURS,
+    SYNC_MAX_SAMPLES,
+    SYNC_MIN_STEP_MINUTES,
+    SYNC_ON_START,
+    SYNC_UNTIL,
+)
 from .events import events_between
 from .store import Store, from_ms
 from .sync import Syncer, choose_mode, default_window, new_client
@@ -161,26 +177,84 @@ async def events(start: str, end: str):
 
 
 class SyncRequest(BaseModel):
-    hours: float | None = None
+    hours: float | None = Field(None, gt=0, allow_inf_nan=False)
     until: str | None = None  # "ephemeris" | "now" | fecha ISO
     start: str | None = None
     end: str | None = None
     # Paso de la línea de tiempo del panel: en ventanas largas solo se baja la imagen más cercana a cada instante.
-    stepMinutes: float | None = Field(None, gt=0)
+    stepMinutes: float | None = Field(None, gt=0, allow_inf_nan=False)
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _snap_to_grid(value: datetime, step: timedelta) -> datetime:
+    """`value` en la malla de múltiplos de `step` desde 1970-01-01 UTC (tolera 2 s de redondeo), o 422."""
+    offset = (value - _EPOCH) % step
+    if offset <= timedelta(seconds=2):
+        return value - offset
+    if step - offset <= timedelta(seconds=2):
+        return value - offset + step
+    raise HTTPException(
+        422, f"En ventanas largas, start y end deben caer en múltiplos de {step / timedelta(minutes=1):g} min (UTC)"
+    )
+
+
+def _check_window(start: datetime, end: datetime, step_minutes: float | None) -> tuple[datetime, datetime]:
+    """Rechaza (422) las ventanas que el panel no pide: la API es pública y cada sincronización descarga de
+    Helioviewer y escribe en disco. Ver los límites en config.py. Devuelve la ventana a sincronizar.
+
+    En las muestreadas solo vale la malla fija de múltiplos de SYNC_MIN_STEP_MINUTES (00/06/12/18 UTC): si se
+    pudiera correr la malla (o elegir un paso cualquiera), cada petición descargaría ~1.400 imágenes nuevas.
+    """
+    now = datetime.now(timezone.utc)
+    if end <= start:
+        raise HTTPException(422, "La ventana está vacía")
+    # Una ventana en el futuro correría el corte de la retención y borraría las imágenes reales.
+    if end > now + timedelta(minutes=10):
+        raise HTTPException(422, "La ventana no puede terminar en el futuro")
+    if choose_mode(start, end, step_minutes) == "all":
+        if end - start > timedelta(hours=ALL_IMAGES_MAX_HOURS):
+            raise HTTPException(
+                422, f"Las ventanas de más de {ALL_IMAGES_MAX_HOURS:g} h necesitan stepMinutes (una imagen por instante)"
+            )
+        if start < now - timedelta(hours=SYNC_ALL_RECENT_HOURS):
+            raise HTTPException(
+                422, f"Todas las imágenes solo se descargan para las últimas {SYNC_ALL_RECENT_HOURS:g} h"
+            )
+        return start, end
+    if step_minutes % SYNC_MIN_STEP_MINUTES:
+        raise HTTPException(422, f"En ventanas largas stepMinutes debe ser múltiplo de {SYNC_MIN_STEP_MINUTES:g}")
+    step = timedelta(minutes=step_minutes)
+    start, end = _snap_to_grid(start, step), _snap_to_grid(end, step)
+    samples = (end - start) / step + 1
+    if samples > SYNC_MAX_SAMPLES:
+        raise HTTPException(422, f"La ventana tiene {samples:.0f} instantes; el máximo es {SYNC_MAX_SAMPLES}")
+    return start, end
 
 
 @app.post("/api/sync", status_code=202)
 async def sync(req: SyncRequest | None = None):
     if syncer.busy:
         raise HTTPException(409, "Ya hay una sincronización en curso")
+    finished = syncer.state.finished_at
+    if finished:
+        wait = SYNC_COOLDOWN_SECONDS - (datetime.now(timezone.utc) - finished).total_seconds()
+        if wait > 0:
+            seconds = math.ceil(wait)
+            raise HTTPException(
+                429, f"La última sincronización acaba de terminar; espera {seconds} s", {"Retry-After": str(seconds)}
+            )
     req = req or SyncRequest()
     if req.start and req.end:
         start, end = _parse(req.start), _parse(req.end)
     else:
+        until = req.until or SYNC_UNTIL
+        if until not in ("ephemeris", "now"):
+            until = _parse(until).isoformat()  # 422 si no es una fecha (antes daba 500)
         async with new_client() as client:
-            start, end = await default_window(client, req.hours or SYNC_HOURS, req.until or SYNC_UNTIL)
-    if end <= start:
-        raise HTTPException(422, "La ventana está vacía")
+            start, end = await default_window(client, req.hours or SYNC_HOURS, until)
+    start, end = _check_window(start, end, req.stepMinutes)
     _start_sync(start, end, req.stepMinutes)
     return {
         "start": _iso(start),

@@ -82,7 +82,7 @@ export async function closestImage(instrument, date) {
  * Hasta 48 h baja todas las imágenes; en rangos más largos, la más cercana a cada instante (cada `stepMinutes`).
  * Si ya hay una sincronización en curso, no lanza otra.
  */
-export async function requestBackendSync({ start, end, stepMinutes }) {
+export async function requestBackendSync({ start, end, stepMinutes }, retry = true) {
   const res = await fetch(`${BACKEND}/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -90,7 +90,20 @@ export async function requestBackendSync({ start, end, stepMinutes }) {
     signal: AbortSignal.timeout(15_000),
   })
   if (res.status === 409) return { alreadyRunning: true }
-  if (!res.ok) throw new Error(`backend respondió ${res.status}`)
+  // 429: la sincronización anterior acaba de terminar. Esperar lo que indica el backend y reintentar una vez.
+  const wait = Number(res.headers.get('Retry-After'))
+  if (res.status === 429 && retry && wait > 0 && wait <= 60) {
+    await new Promise((resolve) => setTimeout(resolve, wait * 1000 + 500))
+    return requestBackendSync({ start, end, stepMinutes }, false)
+  }
+  if (!res.ok) {
+    // 422 (ventana fuera de los límites) y 429 (la anterior acaba de terminar) traen el motivo en `detail`.
+    const detail = await res
+      .json()
+      .then((body) => (typeof body.detail === 'string' ? body.detail : null))
+      .catch(() => null)
+    throw new Error(detail ? `${detail.charAt(0).toLowerCase()}${detail.slice(1)}` : `backend respondió ${res.status}`)
+  }
   return res.json()
 }
 

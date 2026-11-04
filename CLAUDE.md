@@ -74,7 +74,15 @@ y escribe `~/lasco/.env` (`COMPOSE_FILE` + `~/lasco.env`). Probar en local con `
 ### Rangos (`RANGES` en `src/pages/Dashboard.jsx`)
 
 `24h` usa pasos de 15 min (cadencia de LASCO ~12–20 min); `30d/90d/180d` pasos de 6 h. Todos terminan en el fin de
-las efemérides, así que los instantes de distintos rangos coinciden (las cachés por instante se reutilizan).
+las efemérides (o ahora) **redondeado hacia abajo a un múltiplo del paso en UTC** (`floorToStep` en `horizons.js`:
+6 h → 00/06/12/18 UTC), así que los instantes de distintos rangos coinciden y la malla no cambia cada minuto. El
+backend solo acepta esa malla en ventanas largas: si se moviera, cada «actualizar» bajaría ~1.400 imágenes nuevas.
+Los tiempos de Horizons se redondean al segundo (el JD en coma flotante deja 01:56:59.9998).
+
+`POST /api/sync` es público y valida la ventana (`_check_window` en `main.py`, límites en `config.py`): nada en el
+futuro (correría el corte de la retención y borraría todo), todas las imágenes solo en las últimas 120 h y ≤ 48 h,
+muestreadas con paso múltiplo de 360 en la malla fija y ≤ 800 instantes, y 30 s de espera entre sincronizaciones
+(429 con `Retry-After`; el front espera y reintenta una vez).
 
 ### Backend (`lasco_backend/app/`)
 

@@ -33,6 +33,18 @@ RETENTION_DAYS = float(os.environ.get("LASCO_RETENTION_DAYS", "180"))
 # día del rango de 180d del panel no debe borrarse y volver a descargarse en cada sincronización.
 RETENTION_MARGIN_DAYS = 2
 
+# Límites de POST /api/sync, que queda abierto a cualquiera (las sincronizaciones internas, al arrancar o por la
+# CLI, no los aplican). Cubren lo que pide el panel: 24h con todas las imágenes y 30/90/180d cada 6 h.
+#   - todas las imágenes: solo ventanas que empiecen dentro de las últimas SYNC_ALL_RECENT_HOURS horas (las
+#     efemérides de SOHO, donde termina la pestaña 24h, suelen ir ~1 día atrás);
+#   - muestreadas: paso múltiplo de SYNC_MIN_STEP_MINUTES, inicio y fin en esa malla fija (00/06/12/18 UTC con
+#     360) y como mucho SYNC_MAX_SAMPLES instantes;
+#   - SYNC_COOLDOWN_SECONDS entre el fin de una sincronización y el inicio de la siguiente.
+SYNC_ALL_RECENT_HOURS = float(os.environ.get("LASCO_SYNC_ALL_RECENT_HOURS", "120"))
+SYNC_MIN_STEP_MINUTES = float(os.environ.get("LASCO_SYNC_MIN_STEP_MINUTES", "360"))
+SYNC_MAX_SAMPLES = int(os.environ.get("LASCO_SYNC_MAX_SAMPLES", "800"))
+SYNC_COOLDOWN_SECONDS = float(os.environ.get("LASCO_SYNC_COOLDOWN_SECONDS", "30"))
+
 CONCURRENCY = int(os.environ.get("LASCO_CONCURRENCY", "6"))
 REQUEST_TIMEOUT = float(os.environ.get("LASCO_REQUEST_TIMEOUT", "25"))
 MAX_ATTEMPTS = 3

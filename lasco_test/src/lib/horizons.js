@@ -89,16 +89,25 @@ async function requestVectors(target, start, stop, stepMinutes) {
       const cols = line.split(',').map((c) => c.trim())
       const jd = Number(cols[0])
       const [x, y, z, vx, vy, vz] = cols.slice(2, 8).map(Number)
-      return { time: new Date((jd - JD_UNIX_EPOCH) * MS_PER_DAY), pos: [x, y, z], vel: [vx, vy, vz] }
+      // Al segundo: el JD en coma flotante deja errores de microsegundos (01:56:59.9998 en vez de 01:57:00).
+      const time = new Date(Math.round((jd - JD_UNIX_EPOCH) * 86_400) * 1000)
+      return { time, pos: [x, y, z], vel: [vx, vy, vz] }
     })
 }
+
+/** `date` redondeada hacia abajo a un múltiplo de `minutes` contado desde 1970-01-01 00:00 UTC. */
+const floorToStep = (date, minutes) => new Date(Math.floor(date.getTime() / (minutes * 60_000)) * minutes * 60_000)
 
 /**
  * Descarga posiciones heliocéntricas (eclíptica J2000, km) de SOHO y de la Tierra para los últimos
  * `days` días hasta el último instante con efemérides disponibles.
+ *
+ * El fin se ancla a un múltiplo del paso en UTC (6 h → 00/06/12/18 UTC; 15 min → :00/:15/:30/:45): así la malla
+ * de instantes no cambia cada minuto, el backend reutiliza las imágenes ya descargadas para ella (y solo acepta
+ * esa malla en ventanas largas), y los instantes de distintos rangos coinciden.
  */
 export async function fetchSohoAndEarth({ days, stepMinutes = 360, until = new Date() }) {
-  let stop = new Date(Math.floor(until.getTime() / 60_000) * 60_000)
+  let stop = floorToStep(until, stepMinutes)
   let start = new Date(stop.getTime() - days * MS_PER_DAY)
 
   let soho
@@ -106,7 +115,7 @@ export async function fetchSohoAndEarth({ days, stepMinutes = 360, until = new D
     soho = await requestVectors(SOHO_ID, start, stop, stepMinutes)
   } catch (err) {
     if (!(err instanceof EphemerisLimitError)) throw err
-    stop = new Date(err.limit.getTime() - 60_000)
+    stop = floorToStep(new Date(err.limit.getTime() - 60_000), stepMinutes)
     start = new Date(stop.getTime() - days * MS_PER_DAY)
     soho = await requestVectors(SOHO_ID, start, stop, stepMinutes)
   }

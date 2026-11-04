@@ -170,10 +170,8 @@ arranque sobran.
 - Crea solo recursos con la etiqueta **"Always Free-eligible"**. Con la cuenta en Free Tier, Oracle no
   deja crear otros, pero durante los 30 días de prueba sí (se pagan con el crédito y se borran al acabar).
 
-## Antes de anunciarlo
+## Al compartir el enlace
 
-El botón «actualizar» llama a `POST /api/sync`, que queda abierto a cualquiera que tenga la dirección. Hay
-una sola sincronización a la vez y la retención limita el disco, pero alguien podría pedir ventanas largas
-con un paso muy corto y hacer que el backend descargue miles de imágenes de Helioviewer. Para uso personal
-no es un problema; si vas a compartir el enlace, conviene limitar en el backend la duración de las ventanas
-y el paso mínimo.
+El botón «actualizar» llama a `POST /api/sync`, abierto a cualquiera. El backend solo acepta las ventanas que pide
+el panel y espera 30 s entre sincronizaciones (ver «Límites de la sincronización» en `lasco_backend/README.md`), así
+que el disco y las descargas de Helioviewer quedan acotados aunque alguien lo use de forma abusiva.

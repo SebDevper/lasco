@@ -55,9 +55,25 @@ recientes; con `LASCO_SYNC_UNTIL=now` termina ahora.
 | `LASCO_SYNC_ON_START` | `1` | sincronizar al arrancar el servidor |
 | `LASCO_ALL_IMAGES_MAX_HOURS` | `48` | hasta esta duración se bajan todas las imágenes; por encima, una por instante |
 | `LASCO_RETENTION_DAYS` | `180` | días que se conservan (+2 de margen) desde la ventana más reciente; `0` = no borrar |
+| `LASCO_SYNC_ALL_RECENT_HOURS` | `120` | `POST /api/sync`: todas las imágenes solo para ventanas que empiecen en estas últimas horas |
+| `LASCO_SYNC_MIN_STEP_MINUTES` | `360` | `POST /api/sync`: el paso de las ventanas largas debe ser múltiplo de este valor, en su malla UTC |
+| `LASCO_SYNC_MAX_SAMPLES` | `800` | `POST /api/sync`: máximo de instantes por coronógrafo en una ventana larga |
+| `LASCO_SYNC_COOLDOWN_SECONDS` | `30` | `POST /api/sync`: espera entre el fin de una sincronización y la siguiente |
 | `LASCO_CONCURRENCY` | `6` | descargas en paralelo |
 | `LASCO_REQUEST_TIMEOUT` | `25` | segundos por petición (se reintenta hasta 3 veces) |
 | `LASCO_DATA_DIR` | `./data` | carpeta de imágenes e índice |
+
+### Límites de la sincronización
+
+`POST /api/sync` queda abierto a quien tenga la dirección del panel, y cada sincronización descarga de Helioviewer y
+escribe en disco. Por eso solo acepta las ventanas que pide el panel (la sincronización del arranque y la CLI no
+tienen límites):
+
+- nada que termine en el futuro (una ventana así correría el corte de la retención y borraría las imágenes reales);
+- todas las imágenes: ventanas de hasta 48 h que empiecen dentro de las últimas 120 h;
+- muestreadas: paso múltiplo de 360 min, inicio y fin en la malla fija de 00/06/12/18 UTC (si la malla pudiera
+  correrse, cada petición bajaría ~1.400 imágenes nuevas) y como mucho 800 instantes;
+- 30 s entre el fin de una sincronización y la siguiente (429 con `Retry-After`).
 
 ## API
 
@@ -68,7 +84,7 @@ recientes; con `LASCO_SYNC_UNTIL=now` termina ahora.
 | GET | `/api/images/closest?instrument=&date=` | imagen guardada más cercana a una fecha |
 | GET | `/api/images/{id}/header` | encabezado FITS resumido (exposición, filtro, campo, orientación de SOHO, calidad); se cachea |
 | GET | `/api/events?start=&end=` | CME (CACTus) y fulguraciones (GOES) del HEK que se solapan con la ventana (máx. 7 días); caché por día |
-| POST | `/api/sync` | sincroniza en segundo plano; cuerpo `{"start", "end", "stepMinutes"}` o `{"hours", "until"}` (409 si ya hay una en curso) |
+| POST | `/api/sync` | sincroniza en segundo plano; cuerpo `{"start", "end", "stepMinutes"}` o `{"hours", "until"}`. Pública: 422 si la ventana no es de las que pide el panel (ver «Límites de la sincronización»), 409 si ya hay una en curso, 429 (`Retry-After`) si la anterior acaba de terminar |
 | GET | `/api/files/{c2\|c3}/{id}_{512\|1024}.jpg` | archivos de imagen |
 
 Cada imagen incluye, por tamaño, el radio y el centro del Sol en píxeles (`rsunPx`, `centerX`, `centerY`), que el
