@@ -89,6 +89,10 @@ class Store:
                 self._db.commit()
 
     # ── Imágenes ────────────────────────────────────────────────────────────
+    def has_image(self, image_id: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM images WHERE id = ?", (image_id,)).fetchone() is not None
+
     def has_files(self, instrument: str, image_id: str) -> bool:
         with self._lock:
             row = self._db.execute("SELECT 1 FROM images WHERE id = ?", (image_id,)).fetchone()

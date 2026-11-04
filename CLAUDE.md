@@ -41,7 +41,11 @@ docker compose down              # las imágenes quedan en el volumen lasco_data
 ```
 
 En contenedores no hay servidor de Vite: `lasco_test/nginx.conf.template` hace lo mismo que el proxy de
-`vite.config.js` (`/api/horizons` → JPL, `/api/lasco/` → backend). Al cambiar un proxy, cambiar ambos.
+`vite.config.js` (`/api/horizons` → JPL, `/api/lasco/` → backend). Al cambiar un proxy, cambiar ambos. Solo nginx
+(lo que se publica) tiene además la parte de seguridad: deja pasar a Horizons solo `COMMAND` `'-21'`/`'399'` y GET,
+límites por IP (`limit_req`: API 10/s, imágenes 100/s en cola, Horizons 30/min y 3 conexiones; 429) y toma la IP real
+de `X-Forwarded-For` solo desde redes privadas (Caddy). Si el front pide algo nuevo a Horizons o hace más peticiones,
+revisar esos límites.
 
 Producción (VM Always Free de Oracle): `deploy/README.md`. `docker-compose.prod.yml` agrega Caddy (HTTPS con
 `SITE_ADDRESS`) y quita el puerto 8080 del front; `deploy/subir.sh usuario@ip` sube la rama `main` con `git archive`

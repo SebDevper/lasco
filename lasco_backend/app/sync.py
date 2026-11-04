@@ -125,15 +125,17 @@ class Syncer:
                         log.info("La ventana es anterior a la retención: no hay nada que descargar")
                     else:
                         await self._download(mode, start, end, step_minutes)
-                except Exception as exc:  # noqa: BLE001 — se informa en /api/status
+                except Exception as exc:  # noqa: BLE001 — se informa en /api/status (sin detalles internos)
                     log.exception("Sincronización fallida")
-                    self.state.error = str(exc)
+                    self.state.error = (
+                        "no se pudo consultar Helioviewer" if isinstance(exc, httpx.HTTPError) else "error interno"
+                    )
                 # Retención: aunque la descarga haya fallado, lo antiguo sigue sobrando.
                 try:
                     await self._prune()
-                except Exception as exc:  # noqa: BLE001
+                except Exception:  # noqa: BLE001
                     log.exception("Falló la limpieza de imágenes antiguas")
-                    self.state.error = self.state.error or f"limpieza: {exc}"
+                    self.state.error = self.state.error or "falló la limpieza de imágenes antiguas"
             finally:
                 self.state.running = False
                 self.state.finished_at = datetime.now(timezone.utc)

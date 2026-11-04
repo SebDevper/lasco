@@ -45,6 +45,12 @@ SYNC_MIN_STEP_MINUTES = float(os.environ.get("LASCO_SYNC_MIN_STEP_MINUTES", "360
 SYNC_MAX_SAMPLES = int(os.environ.get("LASCO_SYNC_MAX_SAMPLES", "800"))
 SYNC_COOLDOWN_SECONDS = float(os.environ.get("LASCO_SYNC_COOLDOWN_SECONDS", "30"))
 
+# GET /api/events (también público): cada día nuevo son 2 consultas al HEK. El panel pide ±6 h alrededor de un
+# instante de su línea de tiempo (180 días como mucho), así que se aceptan ventanas de hasta EVENTS_MAX_WINDOW_HOURS
+# entre (ahora − EVENTS_MAX_AGE_DAYS) y mañana.
+EVENTS_MAX_WINDOW_HOURS = float(os.environ.get("LASCO_EVENTS_MAX_WINDOW_HOURS", "48"))
+EVENTS_MAX_AGE_DAYS = float(os.environ.get("LASCO_EVENTS_MAX_AGE_DAYS", "185"))
+
 CONCURRENCY = int(os.environ.get("LASCO_CONCURRENCY", "6"))
 REQUEST_TIMEOUT = float(os.environ.get("LASCO_REQUEST_TIMEOUT", "25"))
 MAX_ATTEMPTS = 3

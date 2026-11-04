@@ -42,5 +42,5 @@ async def events_between(store: Store, client: httpx.AsyncClient, start: datetim
     for r in results:
         if isinstance(r, Exception):
             log.warning("No se pudo consultar el HEK: %s", r)
-            error = str(r) or type(r).__name__
+            error = "no se pudo consultar el HEK"  # el detalle queda en el registro, no en la respuesta
     return {"events": store.list_events(start, end), "error": error}

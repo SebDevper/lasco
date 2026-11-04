@@ -172,6 +172,22 @@ arranque sobran.
 
 ## Al compartir el enlace
 
-El botón «actualizar» llama a `POST /api/sync`, abierto a cualquiera. El backend solo acepta las ventanas que pide
-el panel y espera 30 s entre sincronizaciones (ver «Límites de la sincronización» en `lasco_backend/README.md`), así
-que el disco y las descargas de Helioviewer quedan acotados aunque alguien lo use de forma abusiva.
+La API queda abierta a cualquiera, con estas protecciones:
+
+- **Backend**: solo acepta las sincronizaciones y consultas que hace el panel, y espera 30 s entre
+  sincronizaciones (ver «Límites de la sincronización» en `lasco_backend/README.md`). El disco y las consultas a
+  Helioviewer y al HEK quedan acotados aunque alguien lo use de forma abusiva.
+- **nginx** (`lasco_test/nginx.conf.template`): límites por IP (429 al superarlos) y el proxy a JPL Horizons solo
+  deja pasar las posiciones de SOHO y la Tierra.
+
+Los límites por IP necesitan la IP real de cada visitante, que Caddy le pasa a nginx. **Compruébalo una vez después
+del primer despliegue**: abre el panel desde tu navegador y mira el registro de nginx
+
+```bash
+ssh ubuntu@203.0.113.10 'cd ~/lasco && docker compose logs --tail 5 front'
+```
+
+La primera columna debe ser **tu IP pública**, no una `172.x.x.x`. Si aparece una `172.x`, Docker no está
+conservando la IP de origen de las conexiones (pasa, por ejemplo, con el `userland-proxy` de Docker): todos los
+visitantes contarían como uno solo y se repartirían el límite, así que hay que corregirlo antes de compartir el
+enlace.

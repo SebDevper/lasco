@@ -1,4 +1,38 @@
 # Front en contenedor. ${BACKEND_URL} lo sustituye la imagen de nginx al arrancar (por defecto http://backend:8000).
+
+# ── IP real del visitante ──
+# En producción el tráfico llega a través de Caddy, que pone la IP del visitante en X-Forwarded-For (y no se fía de
+# la que mande el cliente). Esa cabecera se acepta solo si la conexión viene de una red privada, es decir, de la red
+# interna de Docker donde está Caddy; con real_ip_recursive off se toma la última IP de la cabecera, la que puso
+# Caddy. Así los límites de abajo cuentan por visitante y no ven a todos como "Caddy".
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+real_ip_header X-Forwarded-For;
+real_ip_recursive off;
+
+# ── Límites por IP (429 al superarlos) ──
+# lasco_api:   consultas al backend (estado cada 2 s, listas, encabezados, eventos, sincronizar).
+# lasco_files: imágenes JPG; el timelapse de 180d pide ~1.400 de golpe con 8 en paralelo: las que pasan del ritmo
+#              esperan en cola (sin nodelay) en vez de rechazarse.
+# horizons:    posiciones de JPL; cada cambio de rango son 2–4 consultas, una tras otra. Además, como mucho 3
+#              conexiones simultáneas por IP: JPL limita por IP y a ráfagas en paralelo responde 503, lo que
+#              castigaría la IP del servidor (y con ella a todos los visitantes).
+limit_req_zone $binary_remote_addr zone=lasco_api:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=lasco_files:10m rate=100r/s;
+limit_req_zone $binary_remote_addr zone=horizons:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=horizons_conn:10m;
+limit_req_status 429;
+limit_conn_status 429;
+limit_req_log_level warn;
+
+# Objetos de Horizons que pide el panel: SOHO (-21) y la Tierra (399). El resto no pasa (si no, el servidor sería
+# un proxy abierto a JPL para cualquier consulta). $arg_COMMAND llega sin decodificar: '-21' → %27-21%27.
+map $arg_COMMAND $horizons_target_ok {
+    default 0;
+    "~^(%27|')(-21|399)(%27|')$" 1;
+}
+
 server {
     listen 80;
     server_name _;
@@ -10,7 +44,15 @@ server {
 
     # Posiciones de SOHO y la Tierra. JPL Horizons no envía cabeceras CORS, así que pasa por aquí
     # (igual que el proxy de Vite en desarrollo): /api/horizons?… → https://ssd.jpl.nasa.gov/api/horizons.api?…
-    location /api/horizons {
+    location = /api/horizons {
+        limit_except GET {
+            deny all;
+        }
+        if ($horizons_target_ok = 0) {
+            return 403;
+        }
+        limit_req zone=horizons burst=10 nodelay;
+        limit_conn horizons_conn 3;
         proxy_pass https://ssd.jpl.nasa.gov/api/horizons.api;
         proxy_ssl_server_name on;
         # La conexión con JPL falla a veces de forma intermitente: fallar rápido (el front reintenta).
@@ -18,8 +60,15 @@ server {
         proxy_read_timeout 60s;
     }
 
+    # Imágenes LASCO guardadas por el backend: /api/lasco/files/… → ${BACKEND_URL}/api/files/…
+    location /api/lasco/files/ {
+        limit_req zone=lasco_files burst=200;
+        proxy_pass ${BACKEND_URL}/api/files/;
+    }
+
     # Backend de imágenes LASCO: /api/lasco/… → ${BACKEND_URL}/api/…
     location /api/lasco/ {
+        limit_req zone=lasco_api burst=40 nodelay;
         proxy_pass ${BACKEND_URL}/api/;
         proxy_read_timeout 60s;
         client_max_body_size 1m;

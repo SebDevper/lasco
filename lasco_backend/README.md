@@ -75,6 +75,12 @@ tienen límites):
   correrse, cada petición bajaría ~1.400 imágenes nuevas) y como mucho 800 instantes;
 - 30 s entre el fin de una sincronización y la siguiente (429 con `Retry-After`).
 
+Las demás rutas que consultan servicios externos también están acotadas: `/api/events` solo acepta ventanas de
+hasta 48 h dentro de los últimos 185 días (`LASCO_EVENTS_MAX_WINDOW_HOURS`, `LASCO_EVENTS_MAX_AGE_DAYS`) y
+`/api/images/{id}/header` solo imágenes que el backend tiene. Los errores de Helioviewer y del HEK se registran en
+el log; las respuestas solo dicen qué servicio falló. No se publican `/docs` ni `/openapi.json`. Los límites por IP
+están en el nginx del front (`lasco_test/nginx.conf.template`).
+
 ## API
 
 | Método | Ruta | Descripción |
@@ -82,8 +88,8 @@ tienen límites):
 | GET | `/api/status` | progreso de la sincronización, imágenes en disco y ventanas completas |
 | GET | `/api/images?start=&end=[&instrument=c2\|c3]` | imágenes guardadas en un rango |
 | GET | `/api/images/closest?instrument=&date=` | imagen guardada más cercana a una fecha |
-| GET | `/api/images/{id}/header` | encabezado FITS resumido (exposición, filtro, campo, orientación de SOHO, calidad); se cachea |
-| GET | `/api/events?start=&end=` | CME (CACTus) y fulguraciones (GOES) del HEK que se solapan con la ventana (máx. 7 días); caché por día |
+| GET | `/api/images/{id}/header` | encabezado FITS resumido (exposición, filtro, campo, orientación de SOHO, calidad); se cachea. 404 si el backend no tiene esa imagen |
+| GET | `/api/events?start=&end=` | CME (CACTus) y fulguraciones (GOES) del HEK que se solapan con la ventana (máx. 48 h, dentro de los últimos 185 días); caché por día |
 | POST | `/api/sync` | sincroniza en segundo plano; cuerpo `{"start", "end", "stepMinutes"}` o `{"hours", "until"}`. Pública: 422 si la ventana no es de las que pide el panel (ver «Límites de la sincronización»), 409 si ya hay una en curso, 429 (`Retry-After`) si la anterior acaba de terminar |
 | GET | `/api/files/{c2\|c3}/{id}_{512\|1024}.jpg` | archivos de imagen |
 

@@ -4,7 +4,7 @@
   GET  /api/images?start=&end=     imágenes guardadas en un rango (opcional: instrument=c2|c3)
   GET  /api/images/closest?instrument=&date=   imagen guardada más cercana a una fecha
   GET  /api/images/{id}/header    encabezado FITS resumido de una imagen (exposición, filtro, campo…)
-  GET  /api/events?start=&end=     CME (CACTus) y fulguraciones (GOES) del HEK en una ventana (máx. 7 días)
+  GET  /api/events?start=&end=     CME (CACTus) y fulguraciones (GOES) del HEK en una ventana (máx. 48 h, últimos 185 días)
   POST /api/sync                   sincroniza una ventana en segundo plano: {start, end, stepMinutes} o {hours, until}
                                    (hasta 48 h: todas las imágenes; más largas: una por instante de la línea de tiempo)
                                    y al terminar borra lo anterior a la retención (LASCO_RETENTION_DAYS).
@@ -29,6 +29,8 @@ from pydantic import BaseModel, Field
 from . import helioviewer
 from .config import (
     ALL_IMAGES_MAX_HOURS,
+    EVENTS_MAX_AGE_DAYS,
+    EVENTS_MAX_WINDOW_HOURS,
     IMAGES_DIR,
     INSTRUMENTS,
     RETENTION_DAYS,
@@ -71,7 +73,8 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="LASCO backend", lifespan=lifespan)
+# Sin /docs, /redoc ni /openapi.json: la API queda expuesta en internet y no hace falta publicar su descripción.
+app = FastAPI(title="LASCO backend", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/files", StaticFiles(directory=IMAGES_DIR), name="files")
 
@@ -154,15 +157,20 @@ def closest_image(instrument: str = Query(..., pattern="^(c2|c3)$"), date: str =
 
 
 @app.get("/api/images/{image_id}/header")
-async def image_header(image_id: str = Path(..., pattern=r"^\d+$")):
+async def image_header(image_id: str = Path(..., pattern=r"^\d{1,12}$")):
     cached = store.get_header(image_id)
     if cached:
         return cached
+    # Solo imágenes que tiene el backend: si no, cualquiera podría hacerle consultar (y guardar para siempre) el
+    # encabezado de cualquier imagen de Helioviewer.
+    if not store.has_image(image_id):
+        raise HTTPException(404, "El backend no tiene esa imagen")
     async with new_client() as client:
         try:
             header = await helioviewer.jp2_header(client, image_id)
-        except (httpx.HTTPError, ET.ParseError) as exc:
-            raise HTTPException(502, f"No se pudo obtener el encabezado de Helioviewer: {exc}") from exc
+        except (httpx.HTTPError, ET.ParseError, ValueError) as exc:
+            log.warning("Encabezado de %s: %s", image_id, exc)
+            raise HTTPException(502, "No se pudo obtener el encabezado de Helioviewer") from exc
     store.save_header(image_id, header)
     return header
 
@@ -170,8 +178,12 @@ async def image_header(image_id: str = Path(..., pattern=r"^\d+$")):
 @app.get("/api/events")
 async def events(start: str, end: str):
     a, b = _parse(start), _parse(end)
-    if not timedelta(0) < b - a <= timedelta(days=7):
-        raise HTTPException(422, "La ventana debe durar entre 0 y 7 días")
+    if not timedelta(0) < b - a <= timedelta(hours=EVENTS_MAX_WINDOW_HOURS):
+        raise HTTPException(422, f"La ventana debe durar entre 0 y {EVENTS_MAX_WINDOW_HOURS:g} h")
+    # Solo el período que puede mostrar el panel: cada día nuevo son consultas al HEK que quedan guardadas.
+    now = datetime.now(timezone.utc)
+    if a < now - timedelta(days=EVENTS_MAX_AGE_DAYS) or b > now + timedelta(days=1):
+        raise HTTPException(422, f"Solo hay eventos de los últimos {EVENTS_MAX_AGE_DAYS:g} días")
     async with new_client() as client:
         return await events_between(store, client, a, b)
 
