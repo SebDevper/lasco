@@ -1,0 +1,41 @@
+# Producción (VM de Oracle Cloud, ver deploy/README.md): se suma a docker-compose.yml.
+# deploy/subir.sh lo activa escribiendo en ~/lasco/.env  COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+# más el contenido de ~/lasco.env, así que en la VM basta con `docker compose …`.
+#
+# Caddy recibe el tráfico en 80/443 con HTTPS automático y se lo pasa al front (nginx), que ya no publica
+# su puerto 8080. Variables (en ~/lasco.env):
+#   SITE_ADDRESS          dirección pública, p. ej. lasco.203-0-113-10.sslip.io (obligatoria)
+#   LASCO_RETENTION_DAYS  días de imágenes que se conservan (180 por defecto)
+#   HTTP_PORT/HTTPS_PORT  puertos del host (80/443 por defecto; cambiarlos solo para probar en local)
+services:
+  front:
+    ports: !reset []
+
+  backend:
+    environment:
+      LASCO_RETENTION_DAYS: ${LASCO_RETENTION_DAYS:-180}
+
+  caddy:
+    image: caddy:2.10-alpine
+    # Proxy al front con HTTPS automático (Let's Encrypt o ZeroSSL) para SITE_ADDRESS: con un nombre de dominio
+    # pide y renueva el certificado solo; con ":80" sirve HTTP sin certificado (pruebas en local).
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - ${SITE_ADDRESS:?falta SITE_ADDRESS en ~/lasco.env (ver deploy/README.md)}
+      - --to
+      - front:80
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - caddy_data:/data # certificados: si se pierden, Caddy los vuelve a pedir
+      - caddy_config:/config
+    depends_on:
+      - front
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

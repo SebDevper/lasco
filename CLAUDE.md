@@ -43,6 +43,11 @@ docker compose down              # las imágenes quedan en el volumen lasco_data
 En contenedores no hay servidor de Vite: `lasco_test/nginx.conf.template` hace lo mismo que el proxy de
 `vite.config.js` (`/api/horizons` → JPL, `/api/lasco/` → backend). Al cambiar un proxy, cambiar ambos.
 
+Producción (VM Always Free de Oracle): `deploy/README.md`. `docker-compose.prod.yml` agrega Caddy (HTTPS con
+`SITE_ADDRESS`) y quita el puerto 8080 del front; `deploy/subir.sh usuario@ip` sube la rama `main` con `git archive`
+y escribe `~/lasco/.env` (`COMPOSE_FILE` + `~/lasco.env`). Probar en local con `SITE_ADDRESS=:80 HTTP_PORT=8081`
+(Colima solo comparte la carpeta personal: nada de bind mounts desde /tmp).
+
 ## Arquitectura
 
 ### Flujo de datos
