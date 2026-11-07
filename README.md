@@ -15,20 +15,21 @@ veía la nave.
 ## Cómo funciona
 
 ```
-navegador ──▶ front (React + three.js) ──▶ /api/horizons ──▶ JPL Horizons   (posiciones de SOHO y la Tierra)
-                                      └──▶ /api/lasco ────▶ backend (FastAPI + SQLite)
-                                                                ├──▶ Helioviewer   (imágenes LASCO, encabezados FITS)
-                                                                └──▶ HEK (LMSAL)   (CME y fulguraciones)
+navegador ──▶ front (React + three.js) ──▶ /api/lasco ──▶ backend (FastAPI + SQLite)
+                                                             ├──▶ JPL Horizons  (posiciones de SOHO y la Tierra)
+                                                             ├──▶ Helioviewer   (imágenes LASCO, encabezados FITS)
+                                                             └──▶ HEK (LMSAL)   (CME y fulguraciones)
 ```
 
 | Carpeta | Qué es |
 |---|---|
 | [`lasco_test/`](lasco_test) | Front: Vite + React 18 + three.js, sin TypeScript. En contenedor lo sirve nginx. |
-| [`lasco_backend/`](lasco_backend) | Backend en Python: descarga las imágenes LASCO, las guarda en disco y las sirve. Ver su [README](lasco_backend/README.md). |
+| [`lasco_backend/`](lasco_backend) | Backend en Python: sirve las posiciones de SOHO y la Tierra, descarga las imágenes LASCO, las guarda en disco y las sirve. Ver su [README](lasco_backend/README.md). |
 | [`deploy/`](deploy) | Guía y scripts para publicarlo gratis en Oracle Cloud. Ver su [README](deploy/README.md). |
 
-El navegador nunca habla con Helioviewer ni con el HEK: el backend descarga las imágenes una vez (botón
-«actualizar») y luego las sirve desde disco. Conserva 180 días; lo más antiguo se borra solo.
+El navegador nunca habla con JPL, Helioviewer ni el HEK: el backend pide cada posición a JPL Horizons una sola vez
+y la guarda, descarga las imágenes una vez (botón «actualizar») y luego sirve todo desde disco. Conserva 180 días;
+lo más antiguo se borra solo. Sin el backend el panel no carga.
 
 ## Correrlo en local
 

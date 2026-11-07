@@ -4,7 +4,7 @@ import HaloChart from '../components/HaloChart.jsx'
 import DistanceChart from '../components/DistanceChart.jsx'
 import LascoImages, { GapBadge } from '../components/LascoImages.jsx'
 import Pane, { Comment } from '../components/Pane.jsx'
-import { fetchSohoAndEarth } from '../lib/horizons.js'
+import { fetchSohoAndEarth } from '../lib/positions.js'
 import {
   INSTRUMENTS,
   fetchBackendStatus,
@@ -202,14 +202,17 @@ export default function Dashboard() {
     fetchSohoAndEarth({ days: range.days, stepMinutes: range.stepMinutes })
       .then(({ samples, ephemerisEnd }) => {
         if (cancelled) return
-        if (!samples.length) throw new Error('Horizons no devolvió datos para ese rango')
+        if (!samples.length) throw new Error('el backend no devolvió posiciones para ese rango')
         const described = samples.map(describeSample)
         setData({ samples: described, ephemerisEnd })
         setSelected(samples.length - 1)
         setStatus({ loading: false, error: null })
         loadImages(described, range)
       })
-      .catch((err) => !cancelled && setStatus({ loading: false, error: err.message }))
+      .catch(
+        (err) =>
+          !cancelled && setStatus({ loading: false, error: err.message, unreachable: Boolean(err.unreachable) }),
+      )
     return () => {
       cancelled = true
     }
@@ -304,19 +307,26 @@ export default function Dashboard() {
           <div className="console__log" aria-live="polite">
             {status.loading ? (
               <div>
-                <span className="tag tag--info">[..]</span> consultando jpl horizons<span className="cursor cursor--inline" />
+                <span className="tag tag--info">[..]</span> consultando posiciones · backend lasco (jpl horizons)
+                <span className="cursor cursor--inline" />
               </div>
             ) : status.error ? (
               <div className="console__error" role="alert">
                 <span className="tag tag--error">[error]</span> no se pudieron cargar las efemérides: {status.error}
-                <span className="comment-inline"> # requiere npm run dev o npm run preview (proxy de vite)</span>{' '}
+                <span className="comment-inline">
+                  {' '}
+                  {status.unreachable
+                    ? '# requiere el backend lasco: cd lasco_backend && .venv/bin/uvicorn app.main:app --port 8000'
+                    : '# las posiciones vienen del backend lasco (/api/lasco/positions)'}
+                </span>{' '}
                 <button className="btn btn--small" onClick={() => setReloadKey((k) => k + 1)}>
                   reintentar
                 </button>
               </div>
             ) : (
               <div>
-                <span className="tag tag--ok">[ok]</span> efemérides jpl horizons · último dato {fmtDateTime(data.ephemerisEnd)}
+                <span className="tag tag--ok">[ok]</span> efemérides jpl horizons (vía backend) · último dato{' '}
+                {fmtDateTime(data.ephemerisEnd)}
               </div>
             )}
 

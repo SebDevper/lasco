@@ -5,7 +5,7 @@ de `docker-compose.yml` más un [Caddy](https://caddyserver.com) delante que ges
 
 ```
 navegador ──https──▶ caddy (80/443) ──▶ front (nginx) ──▶ backend (FastAPI) ──▶ volumen lasco_data
-                                              └──▶ JPL Horizons            └──▶ Helioviewer, HEK
+                                                                  └──▶ JPL Horizons, Helioviewer, HEK
 ```
 
 **Costo: 0.** La cuenta se queda en *Free Tier*: Oracle solo permite recursos "Always Free" y no tiene
@@ -176,9 +176,10 @@ La API queda abierta a cualquiera, con estas protecciones:
 
 - **Backend**: solo acepta las sincronizaciones y consultas que hace el panel, y espera 30 s entre
   sincronizaciones (ver «Límites de la sincronización» en `lasco_backend/README.md`). El disco y las consultas a
-  Helioviewer y al HEK quedan acotados aunque alguien lo use de forma abusiva.
-- **nginx** (`lasco_test/nginx.conf.template`): límites por IP (429 al superarlos) y el proxy a JPL Horizons solo
-  deja pasar las posiciones de SOHO y la Tierra.
+  JPL Horizons, Helioviewer y el HEK quedan acotados aunque alguien lo use de forma abusiva (las posiciones se
+  guardan: a JPL solo se le piden los instantes nuevos).
+- **nginx** (`lasco_test/nginx.conf.template`): límites por IP (429 al superarlos). Solo hace de proxy hacia el
+  backend; el navegador no llama a ninguna API externa.
 
 Los límites por IP necesitan la IP real de cada visitante, que Caddy le pasa a nginx. **Compruébalo una vez después
 del primer despliegue**: abre el panel desde tu navegador y mira el registro de nginx

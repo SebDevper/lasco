@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS event_days (
     day         TEXT PRIMARY KEY,
     fetched_ms  INTEGER NOT NULL
 );
+
+-- Posiciones de JPL Horizons (heliocéntricas, eclíptica J2000, km y km/s) por objetivo (-21 SOHO, 399 Tierra)
+-- e instante de la malla fija.
+CREATE TABLE IF NOT EXISTS positions (
+    target   TEXT NOT NULL,
+    time_ms  INTEGER NOT NULL,
+    x        REAL NOT NULL,
+    y        REAL NOT NULL,
+    z        REAL NOT NULL,
+    vx       REAL NOT NULL,
+    vy       REAL NOT NULL,
+    vz       REAL NOT NULL,
+    PRIMARY KEY (target, time_ms)
+);
 """
 
 
@@ -238,6 +252,32 @@ class Store:
             for size in SIZES:
                 image_path(r["instrument"], r["id"], size).unlink(missing_ok=True)
         return {"images": len(doomed), "samples": samples, "windows": windows, "events": events}
+
+    # ── Posiciones (JPL Horizons) ───────────────────────────────────────────
+    def get_positions(self, target: str, start_ms: int, end_ms: int, step_ms: int) -> dict[int, tuple]:
+        """Posiciones guardadas de `target` en los instantes start_ms, start_ms + step_ms, … ≤ end_ms.
+
+        Devuelve {time_ms: (x, y, z, vx, vy, vz)}; los instantes fuera de esa malla no se incluyen.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT time_ms, x, y, z, vx, vy, vz FROM positions"
+                " WHERE target = ? AND time_ms BETWEEN ? AND ? AND (time_ms - ?) % ? = 0",
+                (target, start_ms, end_ms, start_ms, step_ms),
+            ).fetchall()
+        return {r["time_ms"]: (r["x"], r["y"], r["z"], r["vx"], r["vy"], r["vz"]) for r in rows}
+
+    def save_positions(self, target: str, rows: list[tuple]) -> None:
+        """Guarda filas (time_ms, x, y, z, vx, vy, vz) de `target` en una sola transacción."""
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO positions VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [(target, *r) for r in rows]
+            )
+
+    def prune_positions(self, cutoff: datetime) -> int:
+        """Borra las posiciones anteriores a `cutoff`. Devuelve cuántas filas borró."""
+        with self._lock, self._db:
+            return self._db.execute("DELETE FROM positions WHERE time_ms < ?", (to_ms(cutoff),)).rowcount
 
     # ── Encabezados FITS ────────────────────────────────────────────────────
     def get_header(self, image_id: str) -> dict | None:

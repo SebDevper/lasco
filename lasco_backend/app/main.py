@@ -5,6 +5,10 @@
   GET  /api/images/closest?instrument=&date=   imagen guardada más cercana a una fecha
   GET  /api/images/{id}/header    encabezado FITS resumido de una imagen (exposición, filtro, campo…)
   GET  /api/events?start=&end=     CME (CACTus) y fulguraciones (GOES) del HEK en una ventana (máx. 48 h, últimos 185 días)
+  GET  /api/positions?days=&stepMinutes=   posiciones de SOHO y la Tierra (JPL Horizons, caché en SQLite):
+                                   últimos `days` días (1–180) cada 15 o 360 min, hasta el fin de las efemérides
+                                   de SOHO (lo decide el backend). 422 fuera de esos límites; si falla JPL, lo
+                                   guardado hasta el primer hueco (502 si no hay nada)
   POST /api/sync                   sincroniza una ventana en segundo plano: {start, end, stepMinutes} o {hours, until}
                                    (hasta 48 h: todas las imágenes; más largas: una por instante de la línea de tiempo)
                                    y al terminar borra lo anterior a la retención (LASCO_RETENTION_DAYS).
@@ -16,6 +20,7 @@
 import asyncio
 import logging
 import math
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -26,13 +31,16 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import helioviewer
+from . import helioviewer, horizons
 from .config import (
     ALL_IMAGES_MAX_HOURS,
     EVENTS_MAX_AGE_DAYS,
     EVENTS_MAX_WINDOW_HOURS,
     IMAGES_DIR,
     INSTRUMENTS,
+    POSITIONS_MAX_DAYS,
+    POSITIONS_MAX_SAMPLES,
+    POSITIONS_STEP_MINUTES,
     RETENTION_DAYS,
     SIZES,
     SYNC_ALL_RECENT_HOURS,
@@ -44,6 +52,7 @@ from .config import (
     SYNC_UNTIL,
 )
 from .events import events_between
+from .positions import positions_window
 from .store import Store, from_ms
 from .sync import Syncer, choose_mode, default_window, new_client
 
@@ -186,6 +195,33 @@ async def events(start: str, end: str):
         raise HTTPException(422, f"Solo hay eventos de los últimos {EVENTS_MAX_AGE_DAYS:g} días")
     async with new_client() as client:
         return await events_between(store, client, a, b)
+
+
+def _int_param(value: str | None, name: str) -> int:
+    """Parámetro entero positivo (422 en español; la validación de FastAPI respondería en inglés)."""
+    if value is None or not re.fullmatch(r"\d{1,6}", value):
+        raise HTTPException(422, f"{name} debe ser un número entero")
+    return int(value)
+
+
+@app.get("/api/positions")
+async def positions(days: str | None = None, stepMinutes: str | None = None):  # noqa: N803 — nombre de la API
+    # Pública y cada instante nuevo es una consulta a JPL: solo los rangos del panel (límites en config.py). El fin
+    # no se puede elegir: lo pone el backend.
+    n_days, step = _int_param(days, "days"), _int_param(stepMinutes, "stepMinutes")
+    if not 1 <= n_days <= POSITIONS_MAX_DAYS:
+        raise HTTPException(422, f"days debe estar entre 1 y {POSITIONS_MAX_DAYS}")
+    if step not in POSITIONS_STEP_MINUTES:
+        raise HTTPException(422, f"stepMinutes debe ser {' o '.join(map(str, POSITIONS_STEP_MINUTES))}")
+    samples = n_days * 1440 // step + 1
+    if samples > POSITIONS_MAX_SAMPLES:
+        raise HTTPException(422, f"La ventana tiene {samples} instantes; el máximo es {POSITIONS_MAX_SAMPLES}")
+    async with new_client() as client:
+        try:
+            return await positions_window(store, client, n_days, step)
+        except (httpx.HTTPError, horizons.HorizonsError, ValueError) as exc:
+            log.warning("Posiciones (%d días, %d min): %r", n_days, step, exc)
+            raise HTTPException(502, "no se pudo consultar JPL Horizons") from exc
 
 
 class SyncRequest(BaseModel):

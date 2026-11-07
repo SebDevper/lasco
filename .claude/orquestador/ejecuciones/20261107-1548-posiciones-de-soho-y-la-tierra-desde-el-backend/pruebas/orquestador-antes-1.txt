@@ -1,0 +1,9 @@
+# entorno · orquestador-antes-1 · 2026-11-07 16:18:47 UTC
+
+## Escuchando en 5173, 4173, 8000, 8001, 8080
+
+(nada)
+
+## Contenedores en marcha
+
+(no disponible: failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory)

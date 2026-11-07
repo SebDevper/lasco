@@ -1,6 +1,6 @@
 # Front: se compila con Node y se sirve con nginx.
 # nginx hace en el contenedor lo que el proxy de Vite hace en desarrollo (ver nginx.conf.template):
-#   /api/horizons → JPL Horizons    /api/lasco/ → backend
+#   /api/lasco/ → backend (posiciones e imágenes)
 
 # ── 1) Compilación ──
 FROM node:26-alpine AS build

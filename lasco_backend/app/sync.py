@@ -18,6 +18,7 @@ from .config import (
     CONCURRENCY,
     INSTRUMENTS,
     MAX_ATTEMPTS,
+    POSITIONS_MAX_DAYS,
     REQUEST_TIMEOUT,
     RETENTION_DAYS,
     RETENTION_MARGIN_DAYS,
@@ -64,10 +65,11 @@ async def default_window(client: httpx.AsyncClient, hours: float = SYNC_HOURS, u
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     end = now
     if until == "ephemeris":
+        # Con caché: JPL se consulta como mucho cada EPHEMERIS_CHECK_MINUTES (también desde POST /api/sync).
         try:
             end = min(now, await horizons.soho_ephemeris_end(client) or now)
-        except httpx.HTTPError as exc:
-            log.warning("No se pudo consultar JPL Horizons (%s); la ventana termina ahora", exc)
+        except (httpx.HTTPError, horizons.HorizonsError) as exc:
+            log.warning("No se pudo consultar JPL Horizons (%r); la ventana termina ahora", exc)
     elif until != "now":
         end = datetime.fromisoformat(until.replace("Z", "+00:00"))
     return end - timedelta(hours=hours), end
@@ -163,6 +165,15 @@ class Syncer:
 
     async def _prune(self) -> None:
         """Borra lo que quedó fuera del rango más largo del panel, contado desde la ventana más reciente."""
+        # Posiciones: retención propia (no depende de LASCO_RETENTION_DAYS, ni aunque sea 0). /api/positions no
+        # puede pedir nada anterior a ahora − POSITIONS_MAX_DAYS.
+        positions_cutoff = datetime.now(timezone.utc) - timedelta(days=POSITIONS_MAX_DAYS + RETENTION_MARGIN_DAYS)
+        removed_positions = await asyncio.to_thread(self.store.prune_positions, positions_cutoff)
+        if removed_positions:
+            log.info(
+                "Retención de posiciones (anterior a %s): %d borradas", positions_cutoff.isoformat(), removed_positions
+            )
+
         cutoff = self._retention_cutoff()
         if cutoff is None:
             return

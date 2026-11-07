@@ -8,7 +8,8 @@ Panel web que muestra el Sol en 3D, la posición real de la nave SOHO (que lleva
 halo alrededor de L1, y las imágenes LASCO C2/C3 superpuestas tal como las veía la nave. Dos partes:
 
 - `lasco_test/` — front: Vite 8 + React 18 + three.js (sin TypeScript, sin router).
-- `lasco_backend/` — backend Python (FastAPI + httpx + SQLite) que descarga las imágenes LASCO y las sirve desde disco.
+- `lasco_backend/` — backend Python (FastAPI + httpx + SQLite) que descarga las imágenes LASCO y las sirve desde disco,
+  y sirve las posiciones de SOHO y la Tierra (las pide a JPL Horizons y las guarda).
 
 La interfaz y los comentarios del código están en español. El usuario se comunica en español.
 
@@ -41,11 +42,10 @@ docker compose down              # las imágenes quedan en el volumen lasco_data
 ```
 
 En contenedores no hay servidor de Vite: `lasco_test/nginx.conf.template` hace lo mismo que el proxy de
-`vite.config.js` (`/api/horizons` → JPL, `/api/lasco/` → backend). Al cambiar un proxy, cambiar ambos. Solo nginx
-(lo que se publica) tiene además la parte de seguridad: deja pasar a Horizons solo `COMMAND` `'-21'`/`'399'` y GET,
-límites por IP (`limit_req`: API 10/s, imágenes 100/s en cola, Horizons 30/min y 3 conexiones; 429) y toma la IP real
-de `X-Forwarded-For` solo desde redes privadas (Caddy). Si el front pide algo nuevo a Horizons o hace más peticiones,
-revisar esos límites.
+`vite.config.js` (`/api/lasco/` → backend; es el único proxy: el navegador no llama a ninguna API externa).
+Al cambiar un proxy, cambiar ambos. Solo nginx (lo que se publica) tiene además la parte de seguridad: límites por IP
+(`limit_req`: API 10/s, imágenes 100/s en cola; 429) y toma la IP real de `X-Forwarded-For` solo desde redes privadas
+(Caddy). Si el front hace más peticiones al backend, revisar `lasco_api`.
 
 Producción (VM Always Free de Oracle): `deploy/README.md`. `docker-compose.prod.yml` agrega Caddy (HTTPS con
 `SITE_ADDRESS`) y quita el puerto 8080 del front; `deploy/subir.sh usuario@ip` sube la rama `main` con `git archive`
@@ -63,10 +63,13 @@ ejecución queda registrada en `.claude/orquestador/ejecuciones/` (bitácora, pl
 
 ### Flujo de datos
 
-1. **Posiciones** — `src/lib/horizons.js` pide a JPL Horizons vectores heliocéntricos (eclíptica J2000, km) de SOHO
-   (`-21`) y la Tierra (`399`). Horizons no tiene CORS: va por el proxy de Vite `/api/horizons` (`vite.config.js`),
-   que solo existe en `dev`/`preview`. Las efemérides de SOHO terminan en la última predicción publicada (suele ir
-   ~1 día atrás); el cliente detecta el error "No ephemeris … after" y reintenta terminando en ese límite.
+1. **Posiciones** — `src/lib/positions.js` pide al backend (`GET /api/lasco/positions?days=&stepMinutes=`) los
+   vectores heliocéntricos (eclíptica J2000, km y km/s) de SOHO (`-21`) y la Tierra (`399`). El backend los pide a
+   JPL Horizons (`horizons.py`/`positions.py`) una sola vez por instante de la malla y los guarda en la tabla
+   `positions`. El fin lo decide el backend, no el cliente: las efemérides de SOHO terminan en la última predicción
+   publicada (a veces ~1 día atrás, a veces semanas adelante); ese fin se consulta a JPL como mucho cada 60 min
+   (`LASCO_EPHEMERIS_CHECK_MINUTES`) y, si una consulta de vectores responde "No ephemeris … after", el backend
+   corrige el fin y reintenta. Sin backend el panel no carga.
 2. **Geometría** — `src/lib/orbit.js` `describeSample()` construye el sistema rotatorio Sol→Tierra (x), norte de la
    eclíptica (z), y calcula L1 (≈ r·(μ/3)^(1/3)) y todas las métricas que muestra el panel. Todo lo demás consume
    estos objetos "sample".
@@ -85,10 +88,15 @@ ejecución queda registrada en `.claude/orquestador/ejecuciones/` (bitácora, pl
 ### Rangos (`RANGES` en `src/pages/Dashboard.jsx`)
 
 `24h` usa pasos de 15 min (cadencia de LASCO ~12–20 min); `30d/90d/180d` pasos de 6 h. Todos terminan en el fin de
-las efemérides (o ahora) **redondeado hacia abajo a un múltiplo del paso en UTC** (`floorToStep` en `horizons.js`:
-6 h → 00/06/12/18 UTC), así que los instantes de distintos rangos coinciden y la malla no cambia cada minuto. El
-backend solo acepta esa malla en ventanas largas: si se moviera, cada «actualizar» bajaría ~1.400 imágenes nuevas.
-Los tiempos de Horizons se redondean al segundo (el JD en coma flotante deja 01:56:59.9998).
+las efemérides (o ahora) **redondeado hacia abajo a un múltiplo del paso en UTC** (`floor_to_step` en
+`lasco_backend/app/positions.py`: 6 h → 00/06/12/18 UTC), así que los instantes de distintos rangos coinciden y la
+malla no cambia cada minuto. El backend solo acepta esa malla en ventanas largas: si se moviera, cada «actualizar»
+bajaría ~1.400 imágenes nuevas. Los tiempos de Horizons se redondean al segundo (el JD en coma flotante deja
+01:56:59.9998) y se toma TDB como UTC (así caen exactos en la malla).
+
+`GET /api/positions` es público y acotado (`config.py`): `days` entero entre 1 y `LASCO_POSITIONS_MAX_DAYS` (180),
+`stepMinutes` 15 o 360, ≤ 800 instantes (30d cada 15 min → 422) y sin poder elegir el fin; 502 si falla JPL y no
+hay nada guardado. Si se agrega un rango en `RANGES` con otro paso o más largo, ajustar esos límites.
 
 `POST /api/sync` es público y valida la ventana (`_check_window` en `main.py`, límites en `config.py`): nada en el
 futuro (correría el corte de la retención y borraría todo), todas las imágenes solo en las últimas 120 h y ≤ 48 h,
@@ -105,9 +113,18 @@ muestreadas con paso múltiplo de 360 en la malla fija y ≤ 800 instantes, y 30
   (fin de la ventana más reciente − `LASCO_RETENTION_DAYS` (180) − 2 días): imágenes y sus archivos, encabezados,
   `samples`, eventos, y recorta `coverage` (las muestreadas, alineadas a su malla). No borra una imagen anterior al
   corte si un instante muestreado posterior todavía la usa. `run()` recorta el inicio de la ventana al mismo corte para no
-  descargar lo que se borraría. Si se agrega un rango más largo en `RANGES`, subir el valor.
-- `store.py`: SQLite (`images`, `coverage` con `step_ms`, `samples`, `headers`, `events`, `event_days`) + JPG en
-  `data/images/{c2,c3}/{id}_{512|1024}.jpg`.
+  descargar lo que se borraría. Si se agrega un rango más largo en `RANGES`, subir el valor (y también
+  `LASCO_POSITIONS_MAX_DAYS`). Las posiciones tienen retención propia en el mismo momento: se borran las anteriores
+  a ahora − (`POSITIONS_MAX_DAYS` + 2) días, aunque `LASCO_RETENTION_DAYS` sea 0.
+- `horizons.py`: cliente de JPL (timeout 20 s, 2 intentos) y fin de las efemérides de SOHO con caché en memoria.
+  `positions.py`: ventana de posiciones; rellena la caché con una consulta por objetivo (SOHO y luego la Tierra) bajo
+  un `asyncio.Lock` de módulo, para no mandar consultas en paralelo a JPL; si no falta nada, no toma el lock.
+  **Tras un fallo de JPL no se le vuelve a consultar en 5 min** (`RETRY_AFTER_FAILURE` en `horizons.py`, por separado
+  para el fin y para el relleno): el fin usa el último conocido (o falla sin consultar si nunca hubo uno) y
+  `/api/positions` devuelve lo guardado desde el inicio de la ventana hasta el primer hueco, con `end` = último
+  instante devuelto; 502 si no hay nada. Así, con JPL caído o limitando la IP, el servidor no insiste.
+- `store.py`: SQLite (`images`, `coverage` con `step_ms`, `samples`, `headers`, `events`, `event_days`,
+  `positions`) + JPG en `data/images/{c2,c3}/{id}_{512|1024}.jpg`.
   Tiene una migración ligera en `Store.__init__`; mantenerla al tocar el esquema.
 - `hek.py` / `events.py`: eventos del HEK (LMSAL) cacheados por día UTC; los últimos 3 días se vuelven a consultar
   cada hora (el HEK revisa sus catálogos). Las fulguraciones repetidas entre catálogos se fusionan (clase de SWPC,

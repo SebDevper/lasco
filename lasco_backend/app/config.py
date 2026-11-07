@@ -51,6 +51,23 @@ SYNC_COOLDOWN_SECONDS = float(os.environ.get("LASCO_SYNC_COOLDOWN_SECONDS", "30"
 EVENTS_MAX_WINDOW_HOURS = float(os.environ.get("LASCO_EVENTS_MAX_WINDOW_HOURS", "48"))
 EVENTS_MAX_AGE_DAYS = float(os.environ.get("LASCO_EVENTS_MAX_AGE_DAYS", "185"))
 
+# GET /api/positions (pública): posiciones de SOHO y la Tierra pedidas a JPL Horizons y guardadas en SQLite. El
+# cliente solo elige cuántos días y el paso; el fin lo pone el backend (fin de las efemérides de SOHO redondeado al
+# paso), así que la caché sirve a todos y nadie puede pedir a JPL fechas o pasos cualquiera.
+#   - stepMinutes: uno de POSITIONS_STEP_MINUTES (15 para la pestaña 24h, 360 para 30/90/180d);
+#   - days entero entre 1 y POSITIONS_MAX_DAYS (el rango más largo del panel; también fija su retención);
+#   - como mucho POSITIONS_MAX_SAMPLES instantes (180d cada 6 h son 721).
+POSITIONS_STEP_MINUTES = (15, 360)
+POSITIONS_MAX_DAYS = int(os.environ.get("LASCO_POSITIONS_MAX_DAYS", "180"))
+POSITIONS_MAX_SAMPLES = int(os.environ.get("LASCO_POSITIONS_MAX_SAMPLES", "800"))
+# El fin de las efemérides de SOHO se vuelve a consultar a JPL como mucho cada estos minutos (lo usan la ruta de
+# posiciones y las sincronizaciones que terminan en "ephemeris").
+EPHEMERIS_CHECK_MINUTES = float(os.environ.get("LASCO_EPHEMERIS_CHECK_MINUTES", "60"))
+
+# Objetivos de Horizons: SOHO (la nave que lleva LASCO) y la Tierra.
+SOHO_ID = "-21"
+EARTH_ID = "399"
+
 CONCURRENCY = int(os.environ.get("LASCO_CONCURRENCY", "6"))
 REQUEST_TIMEOUT = float(os.environ.get("LASCO_REQUEST_TIMEOUT", "25"))
 MAX_ATTEMPTS = 3

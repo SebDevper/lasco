@@ -8,3 +8,8 @@
 
 # Configuración personal de Claude Code
 .claude/settings.local.json
+
+# Orquestador: capturas y volcados de las pruebas (los resultados quedan en pruebas/ronda-N.md)
+.claude/orquestador/ejecuciones/*/pruebas/**/*.png
+.claude/orquestador/ejecuciones/*/pruebas/**/*.jpg
+.claude/orquestador/ejecuciones/*/pruebas/**/*.json
