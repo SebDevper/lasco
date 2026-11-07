@@ -47,7 +47,10 @@ En la consola: **Compute → Instances → Create instance**.
 | Boot volume | el tamaño por defecto (~47 GB) |
 
 - Comprueba que la forma y la imagen muestren la etiqueta **"Always Free-eligible"** antes de crear.
-- 1 OCPU / 6 GB sobra para este proyecto y deja libre el resto de la cuota gratuita (4 OCPU / 24 GB).
+- 1 OCPU / 6 GB sobra para este proyecto y usa la mitad de la cuota gratuita de Ampere A1 (2 OCPU y 12 GB en
+  total, es decir 1.500 OCPU-h y 9.000 GB-h al mes; ver
+  [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)).
+  Queda libre otra VM igual.
 - Si aparece **"Out of capacity"**: prueba otro *Availability Domain* en el mismo formulario o vuelve a
   intentar más tarde (a veces tarda días; es lo más habitual en cuentas gratuitas).
 
@@ -144,6 +147,14 @@ deploy/subir.sh ubuntu@203.0.113.10
 `lasco_lasco_data`) y los certificados (volumen `lasco_caddy_data`) se conservan.
 
 ## 9. Mantenimiento
+
+**Inactividad**: Oracle puede reclamar una VM Always Free si durante 7 días se cumplen a la vez las tres
+condiciones: percentil 95 de CPU < 20 %, uso de red < 20 % y, en las Ampere A1, uso de memoria < 20 %. Con poco
+tráfico este panel puede cumplirlas (el 20 % de 6 GB son 1,2 GB, y el sistema con los contenedores suele usar
+menos). Para vigilarlo, mira el uso real con `free -h` y `docker stats --no-stream`, o en la consola en
+**Compute → Instances → lasco → Metrics**. Si la memoria queda muy por debajo del 20 %, se puede bajar la memoria
+de la VM (**Edit → Shape**, p. ej. 1 OCPU y 3 GB) para que el uso normal supere el umbral. Deja margen para el
+`docker compose up --build`, que compila el front en la VM.
 
 **Si Oracle detiene la VM por inactividad**: llega un correo de aviso. En **Compute → Instances → lasco**
 pulsa **Start**. Docker arranca con el sistema y los contenedores (`restart: unless-stopped`) vuelven
