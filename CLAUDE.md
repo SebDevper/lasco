@@ -52,6 +52,13 @@ Producción (VM Always Free de Oracle): `deploy/README.md`. `docker-compose.prod
 y escribe `~/lasco/.env` (`COMPOSE_FILE` + `~/lasco.env`). Probar en local con `SITE_ADDRESS=:80 HTTP_PORT=8081`
 (Colima solo comparte la carpeta personal: nada de bind mounts desde /tmp).
 
+### Orquestador de agentes
+
+`/orquestar <solicitud>` (skill en `.claude/skills/orquestar/`) ejecuta un cambio con subagentes
+(`.claude/agents/`): planificador → desarrollador ⇄ revisor → tester, volviendo a desarrollo si algo falla. Cada
+ejecución queda registrada en `.claude/orquestador/ejecuciones/` (bitácora, plan, revisiones, pruebas). Ver
+`.claude/orquestador/README.md`.
+
 ## Arquitectura
 
 ### Flujo de datos
