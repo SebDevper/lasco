@@ -40,16 +40,47 @@ python3 -m venv .venv
 ## Uso
 
 ```bash
-# Servidor (el front lo usa a través del proxy de Vite en /api/lasco: sin él, el panel no carga)
+# Servidor (el front lo usa a través del proxy de Vite en /api/lasco: sin él, el panel no carga, salvo la versión
+# estática, que lee la foto de `python -m app export`)
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # Solo sincronizar, sin servidor
 .venv/bin/python -m app sync                 # últimas 24 h (configuración por defecto)
 .venv/bin/python -m app sync --hours 48      # otra duración
 .venv/bin/python -m app sync --until now     # terminando ahora
+
+# Foto estática para el front en modo estático (npm run build:static)
+.venv/bin/python -m app export               # en ./export
+.venv/bin/python -m app export --out /otra/carpeta
 ```
 
 Al arrancar, el servidor sincroniza en segundo plano la ventana por defecto.
+
+### Exportación estática
+
+`python -m app export` junta en una carpeta lo que el front en modo estático lee en vez de la API (lo usa
+`../deploy/estatico.sh`), para los rangos 24h y 30d (`EXPORT_RANGES` en `app/export.py`; deben coincidir con
+`STATIC_RANGE_IDS` en `lasco_test/src/pages/Dashboard.jsx`). En orden:
+
+1. posiciones de 1 día cada 15 min y de 30 días cada 6 h (como `GET /api/positions`); si JPL no devuelve todos los
+   instantes, termina con error sin escribir nada;
+2. sincroniza la ventana de 24 h (todas las imágenes) y la de 30 d (una imagen cada 6 h), igual que «actualizar» en
+   esas pestañas: solo baja lo que falte;
+3. elige solo las imágenes de esas dos ventanas (las de rangos más largos que guarda la base no van);
+4. encabezados FITS: reutiliza los guardados en la tabla `headers` y pide a Helioviewer solo los que falten (la
+   primera vez, ~350; después, solo los de las imágenes nuevas);
+5. eventos del HEK de todo el período con 7 h de margen (el panel pide ±6 h alrededor de la hora más cercana), por
+   tramos de 7 días;
+6. escribe `meta.json` (fecha de la foto, rangos, cobertura, conteos, avisos), `positions/1d-15m.json`,
+   `positions/30d-360m.json`, `images.json`, `headers.json`, `events.json` e `images/{c2,c3}/{id}_{512|1024}.jpg`
+   (enlaces duros a `data/images`, o copias) en una carpeta temporal que al final reemplaza a `--out`. Si `--out`
+   existe y no es una exportación anterior (sin `meta.json` de `lasco_backend export`), no la toca.
+
+Código de salida: `0` sin avisos, `2` con avisos (algunas imágenes, encabezados o días del HEK fallaron: la foto se
+escribió y los avisos quedan en `meta.json`), `1` error fatal (no se escribió nada).
+
+Como cualquier sincronización, descarga sobre la base (`LASCO_DATA_DIR`) y aplica la retención. No conviene correrlo
+a la vez que un servidor que esté sincronizando sobre la misma base (son dos procesos sin un bloqueo común).
 
 ### Ventana por defecto
 
@@ -115,4 +146,5 @@ Cada imagen incluye, por tamaño, el radio y el centro del Sol en píxeles (`rsu
 front usa para alinearla con el Sol 3D.
 
 `coverage` en `/api/status` lista las ventanas ya sincronizadas; el front usa imágenes del backend para los
-instantes dentro de ellas. Si el backend está apagado, el panel no carga: no hay posiciones ni imágenes.
+instantes dentro de ellas. Si el backend está apagado, el panel no carga: no hay posiciones ni imágenes (la versión
+estática no usa la API: lee la foto de `python -m app export`).

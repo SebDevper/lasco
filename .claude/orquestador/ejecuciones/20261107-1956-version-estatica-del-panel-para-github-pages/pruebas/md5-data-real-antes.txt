@@ -1,0 +1,2 @@
+MD5 (lasco_backend/data/lasco.sqlite3) = 49de45149e7dd77b40651c1bcc4f9ab0
+    6940

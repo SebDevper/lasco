@@ -1,0 +1,9 @@
+# entorno · orquestador-antes-1 · 2026-11-08 04:20:15 UTC
+
+## Escuchando en 5173, 4173, 8000, 8001, 8080
+
+(nada)
+
+## Contenedores en marcha
+
+(ninguno)

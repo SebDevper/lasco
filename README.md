@@ -29,7 +29,8 @@ navegador ──▶ front (React + three.js) ──▶ /api/lasco ──▶ back
 
 El navegador nunca habla con JPL, Helioviewer ni el HEK: el backend pide cada posición a JPL Horizons una sola vez
 y la guarda, descarga las imágenes una vez (botón «actualizar») y luego sirve todo desde disco. Conserva 180 días;
-lo más antiguo se borra solo. Sin el backend el panel no carga.
+lo más antiguo se borra solo. Sin el backend el panel no carga, salvo en la versión estática: una foto con fecha de
+los rangos 24h y 30d que se publica sin servidor (ver «Publicarlo»).
 
 ## Correrlo en local
 
@@ -63,6 +64,24 @@ docker compose down              # las imágenes quedan en el volumen lasco_data
 [`deploy/README.md`](deploy/README.md) explica paso a paso cómo dejarlo en una VM gratuita de Oracle Cloud con HTTPS
 (Caddy), sin pasar a una cuenta de pago. La API queda abierta, así que el backend y nginx limitan lo que se puede
 pedir (ventanas de sincronización, fechas de eventos, peticiones por IP); los detalles están en las guías.
+
+### Versión estática (sin servidor, p. ej. GitHub Pages)
+
+Alternativa sin backend publicado: una «foto» de los datos (posiciones, imágenes C2/C3 en los dos tamaños,
+encabezados FITS y eventos) de los rangos **24h y 30d**, que se actualiza volviendo a generarla. El panel abre en
+24h, no tiene botón «actualizar» y la consola dice `[ok] datos actualizados al <fecha UTC> · versión estática`.
+Ocupa ~30–40 MB.
+
+```bash
+# Con el entorno del backend instalado (ver «Correrlo en local»); no hace falta tenerlo corriendo
+deploy/estatico.sh                 # exporta, compila y deja el sitio en lasco_test/dist-static/
+python3 -m http.server 4173 -d lasco_test/dist-static   # probarlo en http://localhost:4173/
+```
+
+El script corre `python -m app export` (sincroniza las ventanas de 24 h y 30 d sobre la base local, pide los
+encabezados que falten y escribe la foto en `lasco_backend/export/`), `npm run build:static` y copia la foto en
+`dist-static/data/`. El sitio funciona en la raíz o en una subcarpeta (`usuario.github.io/repo/`); para fijar la
+ruta, `deploy/estatico.sh --base /repo/`.
 
 ## Configuración
 

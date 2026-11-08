@@ -20,6 +20,7 @@ La interfaz y los comentarios del código están en español. El usuario se comu
 cd lasco_test
 npm run dev        # http://localhost:5173
 npm run build      # única verificación automática disponible: no hay tests ni linter configurados
+npm run build:static   # versión estática (lee data/ en vez del backend) en dist-static/; ver «Versión estática»
 npm run preview
 
 # Backend
@@ -27,6 +28,10 @@ cd lasco_backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000   # al arrancar sincroniza la ventana por defecto
 .venv/bin/python -m app sync [--hours 24] [--until ephemeris|now|ISO]   # sincronizar sin servidor
+.venv/bin/python -m app export [--out DIR]   # foto estática de 24h y 30d (por defecto lasco_backend/export)
+
+# Versión estática completa (exporta, compila y copia la foto): lasco_test/dist-static/
+deploy/estatico.sh [--base /repo/]
 ```
 
 Para verificar cambios visuales hay que levantar ambos servicios y mirar la página en el navegador (`npm run build`
@@ -52,6 +57,36 @@ Producción (VM Always Free de Oracle): `deploy/README.md`. `docker-compose.prod
 y escribe `~/lasco/.env` (`COMPOSE_FILE` + `~/lasco.env`). Probar en local con `SITE_ADDRESS=:80 HTTP_PORT=8081`
 (Colima solo comparte la carpeta personal: nada de bind mounts desde /tmp).
 
+### Versión estática (GitHub Pages)
+
+Alternativa sin servidor: una «foto» de los datos publicada como sitio estático, actualizada a mano. El modo con
+backend (dev, Docker, Oracle) sigue igual; el modo se elige al compilar con `VITE_DATA_SOURCE=static`
+(`lasco_test/.env.static`, que carga `npm run build:static` con `--mode static`; `src/lib/datasource.js` expone
+`STATIC_DATA`, `DATA_URL` y `staticJson()`). En ese modo `vite.config.js` usa `base: './'` (sirve en la raíz o en
+`usuario.github.io/repo/`; `--base` la reemplaza) y el build no tiene servidor ni proxy.
+
+- `python -m app export` (`lasco_backend/app/export.py`) reutiliza `positions_window`, `Syncer.run` (24 h con todas
+  las imágenes y 30 d cada 6 h, como «actualizar» en esas pestañas), `events_between` (por tramos de 7 días) y la
+  tabla `headers` (pide a Helioviewer solo los encabezados FITS que falten y los guarda). Escribe en una carpeta
+  temporal y reemplaza `--out` solo si es una exportación anterior (`meta.json` con `generator`). Posiciones
+  incompletas → código 1 sin escribir nada; fallos parciales (imágenes, encabezados, días del HEK) → avisos en
+  `meta.json` y código 2. Sincroniza y aplica la retención sobre la base: para pruebas, usar una copia
+  (`LASCO_DATA_DIR`), y no correrlo mientras un servidor sincroniza sobre la misma base.
+- Estructura de la foto (`dist-static/data/`): `meta.json` (`generatedAt`, `ephemerisEnd`, `ranges`, `coverage`
+  recortada al período de la foto, `counts`, `warnings`), `positions/1d-15m.json` y `positions/30d-360m.json` (el
+  JSON de `GET /api/positions`), `images.json` (formato de `GET /api/images` con urls relativas `images/c2/…`,
+  serializado con `payloads.image_json`, compartido con `main.py`), `headers.json`, `events.json` e
+  `images/{c2,c3}/{id}_{512|1024}.jpg`.
+- Front: `positions.js` y `lasco.js` leen esos archivos (índice de imágenes en memoria en vez de `/images` y
+  `/images/closest`; `headers.json` y `events.json` al primer «pausa»). `Dashboard.jsx` muestra solo 24h y 30d, abre
+  en 24h, no dibuja «actualizar» y la consola dice `[ok] datos actualizados al <generatedAt> · versión estática`.
+  **`EXPORT_RANGES` (backend) y `STATIC_RANGE_IDS` (front) van juntos**: si no coinciden, la pestaña dice «la foto
+  no tiene posiciones para este rango».
+- `deploy/estatico.sh` exporta, corre `build:static`, copia la foto a `dist-static/data`, agrega `.nojekyll` y avisa
+  si el sitio pasa de 1 GB o algún archivo de 100 MB (límites de Pages; la foto ocupa ~30–40 MB).
+  `lasco_backend/export/` y `lasco_test/dist-static/` están en `.gitignore` y `.dockerignore`. Subir el sitio y el
+  workflow de GitHub Actions todavía no están hechos.
+
 ### Orquestador de agentes
 
 `/orquestar <solicitud>` (skill en `.claude/skills/orquestar/`) ejecuta un cambio con subagentes
@@ -69,7 +104,8 @@ ejecución queda registrada en `.claude/orquestador/ejecuciones/` (bitácora, pl
    `positions`. El fin lo decide el backend, no el cliente: las efemérides de SOHO terminan en la última predicción
    publicada (a veces ~1 día atrás, a veces semanas adelante); ese fin se consulta a JPL como mucho cada 60 min
    (`LASCO_EPHEMERIS_CHECK_MINUTES`) y, si una consulta de vectores responde "No ephemeris … after", el backend
-   corrige el fin y reintenta. Sin backend el panel no carga.
+   corrige el fin y reintenta. Sin backend el panel no carga (salvo la versión estática, que lee una foto de
+   `data/`: ver «Versión estática»).
 2. **Geometría** — `src/lib/orbit.js` `describeSample()` construye el sistema rotatorio Sol→Tierra (x), norte de la
    eclíptica (z), y calcula L1 (≈ r·(μ/3)^(1/3)) y todas las métricas que muestra el panel. Todo lo demás consume
    estos objetos "sample".
@@ -87,7 +123,8 @@ ejecución queda registrada en `.claude/orquestador/ejecuciones/` (bitácora, pl
 
 ### Rangos (`RANGES` en `src/pages/Dashboard.jsx`)
 
-`24h` usa pasos de 15 min (cadencia de LASCO ~12–20 min); `30d/90d/180d` pasos de 6 h. Todos terminan en el fin de
+`24h` usa pasos de 15 min (cadencia de LASCO ~12–20 min); `30d/90d/180d` pasos de 6 h (la versión estática solo
+muestra `STATIC_RANGE_IDS`: 24h y 30d, y abre en 24h; el modo con backend abre en 180d). Todos terminan en el fin de
 las efemérides (o ahora) **redondeado hacia abajo a un múltiplo del paso en UTC** (`floor_to_step` en
 `lasco_backend/app/positions.py`: 6 h → 00/06/12/18 UTC), así que los instantes de distintos rangos coinciden y la
 malla no cambia cada minuto. El backend solo acepta esa malla en ventanas largas: si se moviera, cada «actualizar»

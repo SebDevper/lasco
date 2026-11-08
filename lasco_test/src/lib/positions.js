@@ -1,6 +1,8 @@
 // Posiciones heliocéntricas (eclíptica J2000, km y km/s) de SOHO y de la Tierra, servidas por el backend propio
 // (lasco_backend, `GET /api/positions`). El backend las pide a JPL Horizons y las guarda: el navegador no habla con
-// JPL.
+// JPL. En modo estático vienen de la foto (`data/positions/{días}d-{paso}m.json`, mismo formato).
+
+import { STATIC_DATA, staticJson } from './datasource.js'
 
 const BACKEND = '/api/lasco'
 
@@ -57,14 +59,28 @@ const toVector = (v) => ({ pos: v.slice(0, 3), vel: v.slice(3, 6) })
  * distintos rangos coinciden.
  */
 export async function fetchSohoAndEarth({ days, stepMinutes = 360 }) {
-  const params = new URLSearchParams({ days: String(days), stepMinutes: String(stepMinutes) })
-  const res = await fetchWithRetry(`${BACKEND}/positions?${params}`)
-  const body = await res.json()
+  const body = STATIC_DATA ? await staticPositions(days, stepMinutes) : await backendPositions(days, stepMinutes)
   return {
     samples: body.samples.map((s) => {
       const time = new Date(s.time)
       return { time, soho: { time, ...toVector(s.soho) }, earth: { time, ...toVector(s.earth) } }
     }),
     ephemerisEnd: new Date(body.end),
+  }
+}
+
+async function backendPositions(days, stepMinutes) {
+  const params = new URLSearchParams({ days: String(days), stepMinutes: String(stepMinutes) })
+  const res = await fetchWithRetry(`${BACKEND}/positions?${params}`)
+  return res.json()
+}
+
+// La foto solo trae los rangos que exporta el backend (EXPORT_RANGES en lasco_backend/app/export.py).
+async function staticPositions(days, stepMinutes) {
+  try {
+    return await staticJson(`positions/${days}d-${stepMinutes}m.json`)
+  } catch (err) {
+    if (err.status === 404) throw new Error('la foto no tiene posiciones para este rango')
+    throw err
   }
 }

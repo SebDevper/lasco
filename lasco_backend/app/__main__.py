@@ -1,10 +1,16 @@
-"""Línea de comandos: `python -m app sync [--hours 24] [--until ephemeris|now|ISO]`."""
+"""Línea de comandos:
+
+    python -m app sync [--hours 24] [--until ephemeris|now|ISO]
+    python -m app export [--out DIR]      foto estática de 24h y 30d (ver export.py)
+"""
 
 import argparse
 import asyncio
 import logging
+from pathlib import Path
 
 from .config import SYNC_HOURS, SYNC_UNTIL
+from .export import DEFAULT_OUT, export
 from .store import Store
 from .sync import Syncer, default_window, new_client
 
@@ -33,7 +39,19 @@ def main() -> None:
         default=SYNC_UNTIL,
         help='fin de la ventana: "ephemeris" (último dato de posición de SOHO), "now" o una fecha ISO',
     )
+    p = sub.add_parser(
+        "export",
+        help="sincroniza 24 h y 30 d y exporta una foto estática de los datos para el front en modo estático",
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_OUT,
+        help=f"carpeta de salida (por defecto {DEFAULT_OUT}); se reemplaza solo si es una exportación anterior",
+    )
     args = parser.parse_args()
+    if args.cmd == "export":
+        raise SystemExit(asyncio.run(export(args.out)))
     raise SystemExit(asyncio.run(_sync(args.hours, args.until)))
 
 

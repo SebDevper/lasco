@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Pane, { Comment } from './Pane.jsx'
+import { STATIC_DATA } from '../lib/datasource.js'
 import { EVENTS_WINDOW_H, INSTRUMENTS, cmeVisibleAt, isDataGap, useLascoDetails } from '../lib/lasco.js'
 import { fmt1, fmtDateTime, fmtInt, fmtOffset } from '../lib/format.js'
 
@@ -275,7 +276,10 @@ function EventsLog({ details, numbered, visibleIds, time, timeline, onJump }) {
           [ver]: ir al instante en que la cme estaba en el campo
         </span>
         {details.paused && details.eventsError && details.events && (
-          <span className="tag tag--warn"> [!] hek no respondió: mostrando caché</span>
+          <span className="tag tag--warn">
+            {/* En la foto, `error` quiere decir que el HEK falló en algún día al exportar. */}
+            {STATIC_DATA ? ' [!] la foto no tiene todos los eventos' : ' [!] hek no respondió: mostrando caché'}
+          </span>
         )}
       </div>
       <ul className="events-log__list">{body}</ul>
@@ -355,7 +359,12 @@ export default function LascoImages({ lasco, time, onOpen, paused, timeline, onJ
         , cme de{' '}
         <a href="https://www.sidc.be/cactus/" target="_blank" rel="noreferrer">
           cactus (sidc)
-        </a>
+        </a>{' '}
+        · posiciones{' '}
+        <a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noreferrer">
+          jpl horizons (nasa/jpl)
+        </a>{' '}
+        · soho es un proyecto de cooperación internacional entre la esa y la nasa
       </p>
     </Pane>
   )

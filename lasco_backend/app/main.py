@@ -42,7 +42,6 @@ from .config import (
     POSITIONS_MAX_SAMPLES,
     POSITIONS_STEP_MINUTES,
     RETENTION_DAYS,
-    SIZES,
     SYNC_ALL_RECENT_HOURS,
     SYNC_COOLDOWN_SECONDS,
     SYNC_HOURS,
@@ -52,8 +51,9 @@ from .config import (
     SYNC_UNTIL,
 )
 from .events import events_between
+from .payloads import image_json, iso
 from .positions import positions_window
-from .store import Store, from_ms
+from .store import Store
 from .sync import Syncer, choose_mode, default_window, new_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -88,38 +88,12 @@ IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/files", StaticFiles(directory=IMAGES_DIR), name="files")
 
 
-def _iso(dt: datetime | None) -> str | None:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if dt else None
-
-
 def _parse(value: str) -> datetime:
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(422, f"Fecha inválida: {value}") from exc
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
-def _image_json(row) -> dict:
-    """Metadatos de una imagen, con los valores de cada tamaño guardado (radio y centro del Sol escalados)."""
-    files = {}
-    for size in SIZES:
-        k = size / row["width"]
-        files[str(size)] = {
-            "url": f"/api/files/{row['instrument']}/{row['id']}_{size}.jpg",
-            "width": size,
-            "height": round(row["height"] * k),
-            "scale": row["scale"] / k,
-            "rsunPx": row["rsun"] * k,
-            "centerX": row["center_x"] * k,
-            "centerY": row["center_y"] * k,
-        }
-    return {
-        "id": row["id"],
-        "instrument": row["instrument"],
-        "time": _iso(from_ms(row["time_ms"])),
-        "files": files,
-    }
 
 
 @app.get("/api/status")
@@ -130,8 +104,8 @@ def status():
             "running": s.running,
             "mode": s.mode,
             "stepMinutes": s.step_minutes,
-            "start": _iso(s.start),
-            "end": _iso(s.end),
+            "start": iso(s.start),
+            "end": iso(s.end),
             "total": s.total,
             "done": s.done,
             "downloaded": s.downloaded,
@@ -139,14 +113,14 @@ def status():
             "failed": s.failed,
             "pruned": s.pruned,
             "error": s.error,
-            "startedAt": _iso(s.started_at),
-            "finishedAt": _iso(s.finished_at),
+            "startedAt": iso(s.started_at),
+            "finishedAt": iso(s.finished_at),
         },
         "images": {
-            inst: {"count": v["count"], "first": _iso(v["first"]), "last": _iso(v["last"])}
+            inst: {"count": v["count"], "first": iso(v["first"]), "last": iso(v["last"])}
             for inst, v in store.stats().items()
         },
-        "coverage": {inst: [[_iso(a), _iso(b)] for a, b in spans] for inst, spans in store.coverage().items()},
+        "coverage": {inst: [[iso(a), iso(b)] for a, b in spans] for inst, spans in store.coverage().items()},
         "config": {"syncHours": SYNC_HOURS, "syncUntil": SYNC_UNTIL, "retentionDays": RETENTION_DAYS},
     }
 
@@ -154,7 +128,7 @@ def status():
 @app.get("/api/images")
 def list_images(start: str, end: str, instrument: str | None = Query(None, pattern="^(c2|c3)$")):
     rows = store.list_images(_parse(start), _parse(end), instrument)
-    return {"images": [_image_json(r) for r in rows]}
+    return {"images": [image_json(r) for r in rows]}
 
 
 @app.get("/api/images/closest")
@@ -162,7 +136,7 @@ def closest_image(instrument: str = Query(..., pattern="^(c2|c3)$"), date: str =
     row = store.closest(instrument, _parse(date))
     if not row:
         raise HTTPException(404, "No hay imágenes guardadas")
-    return _image_json(row)
+    return image_json(row)
 
 
 @app.get("/api/images/{image_id}/header")
@@ -305,8 +279,8 @@ async def sync(req: SyncRequest | None = None):
     start, end = _check_window(start, end, req.stepMinutes)
     _start_sync(start, end, req.stepMinutes)
     return {
-        "start": _iso(start),
-        "end": _iso(end),
+        "start": iso(start),
+        "end": iso(end),
         "mode": choose_mode(start, end, req.stepMinutes),
         "instruments": list(INSTRUMENTS),
     }

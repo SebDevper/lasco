@@ -4,6 +4,7 @@ import HaloChart from '../components/HaloChart.jsx'
 import DistanceChart from '../components/DistanceChart.jsx'
 import LascoImages, { GapBadge } from '../components/LascoImages.jsx'
 import Pane, { Comment } from '../components/Pane.jsx'
+import { STATIC_DATA } from '../lib/datasource.js'
 import { fetchSohoAndEarth } from '../lib/positions.js'
 import {
   INSTRUMENTS,
@@ -25,6 +26,11 @@ const RANGES = [
   { id: '90d', label: '90d', days: 90, stepMinutes: 360, rowEvery: 1440, rowLabel: 'una por día' },
   { id: '180d', label: '180d', days: 180, stepMinutes: 360, rowEvery: 1440, rowLabel: 'una por día' },
 ]
+// Versión estática (foto de los datos, sin backend): solo estos rangos, y abre en el primero. Deben coincidir con
+// `EXPORT_RANGES` en `lasco_backend/app/export.py` (si no, la pestaña dice «la foto no tiene posiciones…»).
+const STATIC_RANGE_IDS = ['24h', '30d']
+const SHOWN_RANGES = STATIC_DATA ? RANGES.filter((r) => STATIC_RANGE_IDS.includes(r.id)) : RANGES
+const INITIAL_RANGE = STATIC_DATA ? '24h' : '180d'
 const VIEWS = [
   { id: 'overview', label: 'general' },
   { id: 'sun', label: 'sol' },
@@ -62,8 +68,43 @@ function Stat({ label, value, detail }) {
   )
 }
 
+/**
+ * Línea de la consola en la versión estática: fecha de la foto (cuándo se exportó) y avisos de la exportación.
+ * Sin botón «actualizar», `onRetry` vuelve a pedir la foto si falló (p. ej. un corte de red momentáneo).
+ */
+function StaticLine({ backend, onRetry }) {
+  if (backend === undefined) {
+    return (
+      <div>
+        <span className="tag tag--info">[..]</span> leyendo la foto de los datos<span className="cursor cursor--inline" />
+      </div>
+    )
+  }
+  if (backend === null) {
+    return (
+      <div>
+        <span className="tag tag--error">[error]</span> no se pudo leer la foto · sin ella no hay imágenes{' '}
+        <span className="comment-inline"># no se encontraron los datos de la foto (data/meta.json, data/images.json)</span>{' '}
+        <button className="btn btn--small" onClick={onRetry}>
+          reintentar
+        </button>
+      </div>
+    )
+  }
+  const { counts, warnings, generatedAt } = backend
+  const images = Object.values(counts?.images ?? {}).reduce((n, v) => n + v, 0)
+  return (
+    <div>
+      <span className={`tag ${warnings.length ? 'tag--warn' : 'tag--ok'}`}>{warnings.length ? '[!]' : '[ok]'}</span> datos
+      actualizados al {fmtDateTime(new Date(generatedAt))} · versión estática · {fmtInt(images)} imágenes
+      {warnings.length ? ` · ${fmtInt(warnings.length)} ${warnings.length === 1 ? 'aviso' : 'avisos'}` : ''}
+    </div>
+  )
+}
+
 /** Línea de la consola con el estado del backend de imágenes. */
-function BackendLine({ backend }) {
+function BackendLine({ backend, onRetry }) {
+  if (STATIC_DATA) return <StaticLine backend={backend} onRetry={onRetry} />
   if (backend === undefined) {
     return (
       <div>
@@ -107,7 +148,7 @@ function BackendLine({ backend }) {
 }
 
 export default function Dashboard() {
-  const [rangeId, setRangeId] = useState('180d')
+  const [rangeId, setRangeId] = useState(INITIAL_RANGE)
   const range = RANGES.find((r) => r.id === rangeId)
   const [data, setData] = useState(null) // { samples, ephemerisEnd }
   const [status, setStatus] = useState({ loading: true, error: null })
@@ -202,7 +243,9 @@ export default function Dashboard() {
     fetchSohoAndEarth({ days: range.days, stepMinutes: range.stepMinutes })
       .then(({ samples, ephemerisEnd }) => {
         if (cancelled) return
-        if (!samples.length) throw new Error('el backend no devolvió posiciones para ese rango')
+        if (!samples.length) {
+          throw new Error(`${STATIC_DATA ? 'la foto no tiene' : 'el backend no devolvió'} posiciones para ese rango`)
+        }
         const described = samples.map(describeSample)
         setData({ samples: described, ephemerisEnd })
         setSelected(samples.length - 1)
@@ -283,7 +326,7 @@ export default function Dashboard() {
             <span className="prompt">$</span>
             <span className="console__cmd">rango</span>
             <div className="segmented" role="group" aria-label="Rango de tiempo">
-              {RANGES.map((r) => (
+              {SHOWN_RANGES.map((r) => (
                 <button
                   key={r.id}
                   className={r.id === rangeId ? 'is-active' : ''}
@@ -294,20 +337,26 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-            <button
-              className="btn"
-              onClick={refresh}
-              disabled={status.loading}
-              title="Recarga las posiciones y descarga las imágenes LASCO de toda la línea de tiempo"
-            >
-              actualizar
-            </button>
+            {/* En la versión estática no hay nada que actualizar: los datos son los de la foto. */}
+            {!STATIC_DATA && (
+              <button
+                className="btn"
+                onClick={refresh}
+                disabled={status.loading}
+                title="Recarga las posiciones y descarga las imágenes LASCO de toda la línea de tiempo"
+              >
+                actualizar
+              </button>
+            )}
           </div>
 
           <div className="console__log" aria-live="polite">
             {status.loading ? (
               <div>
-                <span className="tag tag--info">[..]</span> consultando posiciones · backend lasco (jpl horizons)
+                <span className="tag tag--info">[..]</span>{' '}
+                {STATIC_DATA
+                  ? 'leyendo posiciones de la foto (jpl horizons)'
+                  : 'consultando posiciones · backend lasco (jpl horizons)'}
                 <span className="cursor cursor--inline" />
               </div>
             ) : status.error ? (
@@ -315,9 +364,11 @@ export default function Dashboard() {
                 <span className="tag tag--error">[error]</span> no se pudieron cargar las efemérides: {status.error}
                 <span className="comment-inline">
                   {' '}
-                  {status.unreachable
-                    ? '# requiere el backend lasco: cd lasco_backend && .venv/bin/uvicorn app.main:app --port 8000'
-                    : '# las posiciones vienen del backend lasco (/api/lasco/positions)'}
+                  {STATIC_DATA
+                    ? `# no se encontraron los datos de la foto (data/positions/${range.days}d-${range.stepMinutes}m.json)`
+                    : status.unreachable
+                      ? '# requiere el backend lasco: cd lasco_backend && .venv/bin/uvicorn app.main:app --port 8000'
+                      : '# las posiciones vienen del backend lasco (/api/lasco/positions)'}
                 </span>{' '}
                 <button className="btn btn--small" onClick={() => setReloadKey((k) => k + 1)}>
                   reintentar
@@ -325,12 +376,21 @@ export default function Dashboard() {
               </div>
             ) : (
               <div>
-                <span className="tag tag--ok">[ok]</span> efemérides jpl horizons (vía backend) · último dato{' '}
+                <span className="tag tag--ok">[ok]</span> efemérides jpl horizons{' '}
+                {STATIC_DATA ? '(foto estática)' : '(vía backend)'} · último dato{' '}
                 {fmtDateTime(data.ephemerisEnd)}
               </div>
             )}
 
-            {data && <BackendLine backend={backend} />}
+            {data && (
+              <BackendLine
+                backend={backend}
+                onRetry={() => {
+                  setBackend(undefined) // «[..] leyendo la foto» mientras se vuelve a pedir
+                  setReloadKey((k) => k + 1)
+                }}
+              />
+            )}
 
             {syncError && (
               <div>
@@ -342,7 +402,8 @@ export default function Dashboard() {
               backend &&
               (prefetch?.running ? (
                 <div className="console__progress">
-                  <span className="tag tag--info">[carga]</span> imágenes lasco desde backend{' '}
+                  <span className="tag tag--info">[carga]</span> imágenes lasco desde{' '}
+                  {STATIC_DATA ? 'la foto' : 'backend'}{' '}
                   <span className="ascii-bar">{asciiBar(prefetch.done, prefetch.total)}</span>{' '}
                   {fmtInt(prefetch.done)}/{fmtInt(prefetch.total)}
                 </div>
@@ -352,24 +413,29 @@ export default function Dashboard() {
                     <span className={`tag ${prefetch?.failed || prefetch?.error ? 'tag--warn' : 'tag--ok'}`}>
                       {prefetch?.failed || prefetch?.error ? '[!]' : '[ok]'}
                     </span>{' '}
-                    timelapse: {fmtInt(coverage.count)}/{fmtInt(samples.length)} instantes con imagen del backend
+                    timelapse: {fmtInt(coverage.count)}/{fmtInt(samples.length)} instantes con imagen{' '}
+                    {STATIC_DATA ? 'de la foto' : 'del backend'}
                     {prefetch?.failed ? ` · ${fmtInt(prefetch.failed)} imágenes no se pudieron cargar` : ''}
-                    {prefetch?.error ? ' · error al consultar el backend' : ''}
+                    {prefetch?.error ? ` · error al consultar ${STATIC_DATA ? 'la foto' : 'el backend'}` : ''}
                   </div>
                   {coverage.count < samples.length && !backendSyncing && (
                     <div>
                       <span className="tag tag--muted">[info]</span>{' '}
-                      {retentionDays > 0 && retentionDays < range.days
-                        ? `el backend solo conserva los últimos ${retentionDays} días · el resto del rango queda sin imagen`
-                        : 'el backend aún no tiene imágenes para todo el rango · ejecuta «actualizar» para que las descargue'}
+                      {STATIC_DATA
+                        ? 'la foto no tiene imágenes para todo el rango'
+                        : retentionDays > 0 && retentionDays < range.days
+                          ? `el backend solo conserva los últimos ${retentionDays} días · el resto del rango queda sin imagen`
+                          : 'el backend aún no tiene imágenes para todo el rango · ejecuta «actualizar» para que las descargue'}
                     </div>
                   )}
                 </>
               ) : (
                 !backendSyncing && (
                   <div>
-                    <span className="tag tag--muted">[info]</span> el backend no tiene imágenes de este rango · ejecuta
-                    «actualizar» para que las descargue
+                    <span className="tag tag--muted">[info]</span>{' '}
+                    {STATIC_DATA
+                      ? 'la foto no tiene imágenes de este rango'
+                      : 'el backend no tiene imágenes de este rango · ejecuta «actualizar» para que las descargue'}
                   </div>
                 )
               ))}

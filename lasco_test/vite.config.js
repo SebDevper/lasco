@@ -12,8 +12,13 @@ const apiProxy = {
   },
 }
 
-export default defineConfig({
+// Modo estático (`npm run build:static`, variables de `.env.static`): el front lee una foto de los datos desde `data/`
+// en vez del backend, para publicarlo sin servidor (GitHub Pages). La base relativa ('./') sirve en la raíz de un
+// dominio o en una subcarpeta (`usuario.github.io/repo/`) sin conocer el nombre del repositorio: el panel es una sola
+// página sin router. `vite build --base /ruta/` la reemplaza.
+export default defineConfig(({ mode }) => ({
+  base: mode === 'static' ? './' : '/',
   plugins: [react()],
   server: { proxy: apiProxy },
   preview: { proxy: apiProxy },
-})
+}))

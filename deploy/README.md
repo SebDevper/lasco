@@ -1,5 +1,9 @@
 # Despliegue en Oracle Cloud (Always Free, sin pasar a Pay As You Go)
 
+> Alternativa sin servidor: la versión estática (foto con fecha de los rangos 24h y 30d, sin «actualizar») se
+> construye con `deploy/estatico.sh` y se publica en cualquier hosting estático, p. ej. GitHub Pages. Ver
+> «Versión estática» en el [README principal](../README.md#versión-estática-sin-servidor-p-ej-github-pages).
+
 Esta guía deja el panel publicado con HTTPS en una VM gratuita de Oracle Cloud, con los mismos contenedores
 de `docker-compose.yml` más un [Caddy](https://caddyserver.com) delante que gestiona el certificado.
 
@@ -21,6 +25,7 @@ Archivos de esta carpeta:
 |---|---|---|
 | `instalar.sh` | en la VM, una vez | instala Docker, abre 80/443 en el firewall de la VM, crea `~/lasco.env` |
 | `subir.sh` | en el Mac | sube la rama `main` (lo confirmado en git) a la VM y reconstruye los contenedores |
+| `estatico.sh` | en el Mac | (no es parte de este despliegue) construye la versión estática en `lasco_test/dist-static/` |
 | `../docker-compose.prod.yml` | (Compose) | agrega Caddy (HTTPS automático) y deja de publicar el puerto 8080 del front |
 
 ---

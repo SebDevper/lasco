@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS positions (
 """
 
 
+# Ids por consulta en las lecturas por lotes (SQLite admite como mínimo 999 variables por consulta).
+_BATCH = 500
+
+
 def to_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
@@ -167,6 +171,32 @@ class Store:
             args.append(instrument)
         with self._lock:
             return self._db.execute(sql + " ORDER BY instrument, time_ms", args).fetchall()
+
+    def sample_images(self, instrument: str, start: datetime, end: datetime, step_ms: int) -> dict[int, str]:
+        """Imagen asignada a cada instante muestreado start, start + step_ms, … ≤ end: {time_ms: image_id}.
+
+        Los instantes de otras mallas (o sin imagen asignada) no se incluyen.
+        """
+        start_ms = to_ms(start)
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT time_ms, image_id FROM samples"
+                " WHERE instrument = ? AND time_ms BETWEEN ? AND ? AND (time_ms - ?) % ? = 0",
+                (instrument, start_ms, to_ms(end), start_ms, step_ms),
+            ).fetchall()
+        return {r["time_ms"]: r["image_id"] for r in rows}
+
+    def images_by_ids(self, ids) -> list[sqlite3.Row]:
+        """Filas de `images` con esos ids (las que no están se omiten), ordenadas por coronógrafo y tiempo."""
+        rows: list[sqlite3.Row] = []
+        ids = list(dict.fromkeys(ids))
+        with self._lock:
+            for i in range(0, len(ids), _BATCH):  # por lotes: SQLite limita las variables por consulta
+                batch = ids[i : i + _BATCH]
+                rows += self._db.execute(
+                    f"SELECT * FROM images WHERE id IN ({','.join('?' * len(batch))})", batch
+                ).fetchall()
+        return sorted(rows, key=lambda r: (r["instrument"], r["time_ms"]))
 
     def closest(self, instrument: str, when: datetime) -> sqlite3.Row | None:
         ms = to_ms(when)
@@ -288,6 +318,21 @@ class Store:
     def save_header(self, image_id: str, header: dict) -> None:
         with self._lock, self._db:
             self._db.execute("INSERT OR REPLACE INTO headers VALUES (?, ?)", (image_id, json.dumps(header)))
+
+    def missing_headers(self, ids) -> list[str]:
+        """Los ids (en el orden recibido, sin repetir) que todavía no tienen encabezado guardado."""
+        ids = list(dict.fromkeys(ids))
+        saved: set[str] = set()
+        with self._lock:
+            for i in range(0, len(ids), _BATCH):
+                batch = ids[i : i + _BATCH]
+                saved.update(
+                    r["id"]
+                    for r in self._db.execute(
+                        f"SELECT id FROM headers WHERE id IN ({','.join('?' * len(batch))})", batch
+                    )
+                )
+        return [i for i in ids if i not in saved]
 
     # ── Eventos solares (HEK) ───────────────────────────────────────────────
     def event_day_fetched(self, day: str) -> int | None:

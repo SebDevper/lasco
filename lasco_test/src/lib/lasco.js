@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { DATA_URL, STATIC_DATA, staticJson } from './datasource.js'
 
 // Imágenes de los coronógrafos LASCO (SOHO), servidas por el backend propio (lasco_backend).
 // El front no descarga nada de Helioviewer: el backend lo hace y guarda las imágenes en disco.
 // Vienen giradas con el norte solar hacia arriba.
+// En modo estático (STATIC_DATA) todo sale de la foto en `data/`: meta.json (cobertura), images.json (índice que
+// reemplaza a /images y /images/closest), headers.json y events.json (se cargan al primer «pausa»).
 
 const BACKEND = '/api/lasco'
 
@@ -22,23 +25,67 @@ const isoSeconds = (date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 // Ventanas que el backend tiene sincronizadas: { c2: [[inicioMs, finMs], …], c3: … }
 let backendCoverage = {}
 
-/** Estado del backend (o null si no está disponible). Actualiza la cobertura conocida. */
+const toCoverage = (coverage) =>
+  Object.fromEntries(
+    Object.entries(coverage ?? {}).map(([inst, spans]) => [
+      inst,
+      spans.map(([a, b]) => [Date.parse(a), Date.parse(b)]),
+    ]),
+  )
+
+/**
+ * Estado del backend (o null si no está disponible). Actualiza la cobertura conocida.
+ * En modo estático, el de la foto: { static: true, generatedAt, ephemerisEnd, counts, coverage, warnings, sync }
+ * (`sync.running` siempre falso: no hay nada que seguir).
+ */
 export async function fetchBackendStatus() {
+  if (STATIC_DATA) return staticStatus()
   try {
     const res = await fetch(`${BACKEND}/status`, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) throw new Error(`backend respondió ${res.status}`)
     const status = await res.json()
-    backendCoverage = Object.fromEntries(
-      Object.entries(status.coverage ?? {}).map(([inst, spans]) => [
-        inst,
-        spans.map(([a, b]) => [Date.parse(a), Date.parse(b)]),
-      ]),
-    )
+    backendCoverage = toCoverage(status.coverage)
     return status
   } catch {
     backendCoverage = {}
     return null
   }
+}
+
+async function staticStatus() {
+  try {
+    const [meta] = await Promise.all([staticJson('meta.json'), staticIndex()])
+    backendCoverage = toCoverage(meta.coverage)
+    return {
+      static: true,
+      generatedAt: meta.generatedAt,
+      ephemerisEnd: meta.ephemerisEnd,
+      counts: meta.counts,
+      coverage: meta.coverage ?? {},
+      warnings: meta.warnings ?? [],
+      sync: { running: false },
+    }
+  } catch {
+    backendCoverage = {}
+    return null
+  }
+}
+
+// Índice de imágenes de la foto por coronógrafo, ordenado por tiempo (`time` en ms), cargado una vez.
+let staticImages = null
+function staticIndex() {
+  if (!staticImages) {
+    staticImages = staticJson('images.json').then(({ images }) =>
+      Object.fromEntries(
+        Object.keys(INSTRUMENTS).map((inst) => [
+          inst,
+          (images[inst] ?? []).map((img) => ({ ...img, time: Date.parse(img.time) })).sort((a, b) => a.time - b.time),
+        ]),
+      ),
+    )
+    staticImages.catch(() => (staticImages = null))
+  }
+  return staticImages
 }
 
 export const coveredByBackend = (instrument, ms) => (backendCoverage[instrument] ?? []).some(([a, b]) => ms >= a && ms <= b)
@@ -50,14 +97,15 @@ function fromBackend(img, size) {
     id: img.id,
     instrument: img.instrument,
     time: new Date(img.time),
-    url: BACKEND + f.url.replace(/^\/api/, ''),
+    // En la foto, `url` es relativa a data/ (images/c2/…); en el backend, /api/files/… (va por el proxy).
+    url: STATIC_DATA ? DATA_URL + f.url : BACKEND + f.url.replace(/^\/api/, ''),
     scale: f.scale,
     width: f.width,
     height: f.height,
     rsunPx: f.rsunPx,
     centerX: f.centerX,
     centerY: f.centerY,
-    source: 'backend',
+    source: STATIC_DATA ? 'foto estática' : 'backend',
   }
 }
 
@@ -73,6 +121,11 @@ async function backendJson(path, signal) {
  * `centerX/centerY` es el centro del Sol en píxeles (origen arriba a la izquierda) y `rsunPx` su radio.
  */
 export async function closestImage(instrument, date) {
+  if (STATIC_DATA) {
+    const list = (await staticIndex())[instrument]
+    if (!list.length) throw new Error('la foto no tiene imágenes de este coronógrafo')
+    return fromBackend(nearest(list, date.getTime()), 1024)
+  }
   const img = await backendJson(`/images/closest?instrument=${instrument}&date=${isoSeconds(date)}`)
   return fromBackend(img, 1024)
 }
@@ -178,7 +231,13 @@ export async function prefetchFrames(times, { onProgress, signal, concurrency = 
   const start = new Date(Math.min(...ms) - 6 * 3_600_000)
   const end = new Date(Math.max(...ms) + 6 * 3_600_000)
   const lists = {}
+  const index = STATIC_DATA ? await staticIndex() : null
   for (const inst of Object.keys(INSTRUMENTS)) {
+    if (index) {
+      // Lo mismo que respondería /images: el índice de la foto recortado a la ventana.
+      lists[inst] = index[inst].filter((img) => img.time >= start.getTime() && img.time <= end.getTime())
+      continue
+    }
     const { images } = await backendJson(
       `/images?instrument=${inst}&start=${isoSeconds(start)}&end=${isoSeconds(end)}`,
       signal,
@@ -245,7 +304,12 @@ const headerCache = new Map()
 /** Encabezado FITS resumido de una imagen (exposición, filtro, campo, orientación de SOHO…). */
 export function fetchImageHeader(id) {
   if (!headerCache.has(id)) {
-    const p = backendJson(`/images/${id}/header`)
+    const p = STATIC_DATA
+      ? staticJson('headers.json').then((headers) => {
+          if (!headers[id]) throw new Error('la foto no tiene el encabezado de esta imagen')
+          return headers[id]
+        })
+      : backendJson(`/images/${id}/header`)
     headerCache.set(id, p)
     p.catch(() => headerCache.delete(id))
   }
@@ -255,11 +319,27 @@ export function fetchImageHeader(id) {
 const eventsCache = new Map()
 const toDate = (v) => (v ? new Date(v) : null)
 
+/** Eventos de la foto que se solapan con [start, end], como responde el backend (Store.list_events). */
+async function staticEvents(start, end) {
+  const { events, error } = await staticJson('events.json')
+  const a = start.getTime()
+  const b = end.getTime()
+  return {
+    error,
+    events: events
+      .filter((e) => Date.parse(e.start) <= b && Date.parse(e.end) >= a)
+      .sort((x, y) => Date.parse(x.start) - Date.parse(y.start)),
+  }
+}
+
 /** CME (CACTus) y fulguraciones (GOES) del HEK que se solapan con [start, end]. */
 export function fetchEvents(start, end) {
   const key = `${start.getTime()}-${end.getTime()}`
   if (!eventsCache.has(key)) {
-    const p = backendJson(`/events?start=${isoSeconds(start)}&end=${isoSeconds(end)}`).then((d) => ({
+    const query = STATIC_DATA
+      ? staticEvents(start, end)
+      : backendJson(`/events?start=${isoSeconds(start)}&end=${isoSeconds(end)}`)
+    const p = query.then((d) => ({
       error: d.error,
       events: d.events.map((e) => ({ ...e, start: toDate(e.start), end: toDate(e.end), peak: toDate(e.peak) })),
     }))
