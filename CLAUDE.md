@@ -84,8 +84,11 @@ backend (dev, Docker, Oracle) sigue igual; el modo se elige al compilar con `VIT
   no tiene posiciones para este rango».
 - `deploy/estatico.sh` exporta, corre `build:static`, copia la foto a `dist-static/data`, agrega `.nojekyll` y avisa
   si el sitio pasa de 1 GB o algún archivo de 100 MB (límites de Pages; la foto ocupa ~30–40 MB).
-  `lasco_backend/export/` y `lasco_test/dist-static/` están en `.gitignore` y `.dockerignore`. Subir el sitio y el
-  workflow de GitHub Actions todavía no están hechos.
+  `lasco_backend/export/` y `lasco_test/dist-static/` están en `.gitignore` y `.dockerignore`.
+- Publicación: `.github/workflows/pages.yml` (manual, `workflow_dispatch`) corre `deploy/estatico.sh` y despliega
+  `dist-static` como artefacto de Pages; guarda `lasco_backend/data` en la caché de Actions para que cada foto solo
+  baje lo nuevo. Guía paso a paso: `deploy/github-pages.md`. Si el script cambia de requisitos (Python, Node,
+  variables), revisar el workflow.
 
 ### Orquestador de agentes
 

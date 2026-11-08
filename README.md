@@ -83,6 +83,9 @@ encabezados que falten y escribe la foto en `lasco_backend/export/`), `npm run b
 `dist-static/data/`. El sitio funciona en la raíz o en una subcarpeta (`usuario.github.io/repo/`); para fijar la
 ruta, `deploy/estatico.sh --base /repo/`.
 
+Para publicarlo en GitHub Pages (repositorio, Pages y el workflow manual `.github/workflows/pages.yml`), ver
+[`deploy/github-pages.md`](deploy/github-pages.md).
+
 ## Configuración
 
 Todo se configura con variables de entorno del backend (`LASCO_*`): ventana de sincronización, retención, límites

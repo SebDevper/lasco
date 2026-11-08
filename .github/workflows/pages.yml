@@ -1,0 +1,98 @@
+# Publica la versión estática del panel en GitHub Pages: exporta una foto nueva de los datos (24h y 30d), compila el
+# front en modo estático y despliega lasco_test/dist-static. Guía: deploy/github-pages.md.
+name: Publicar en GitHub Pages
+
+on:
+  # Manual: pestaña Actions → «Publicar en GitHub Pages» → Run workflow (o `gh workflow run pages.yml`).
+  workflow_dispatch:
+  # Opcional: publicar en cada push a main (descomentar).
+  # push:
+  #   branches: [main]
+  # Opcional: renovar la foto sola, p. ej. todos los días a las 06:30 UTC (descomentar). GitHub desactiva los
+  # workflows programados si el repositorio pasa 60 días sin actividad.
+  # schedule:
+  #   - cron: "30 6 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un despliegue a la vez; si se lanza otro, espera a que termine el anterior.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  construir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: lasco_backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: lasco_test/.nvmrc
+          cache: npm
+          cache-dependency-path: lasco_test/package-lock.json
+
+      - name: Instalar dependencias
+        run: |
+          python -m venv lasco_backend/.venv
+          lasco_backend/.venv/bin/pip install -r lasco_backend/requirements.txt
+          npm ci --prefix lasco_test
+
+      # La base del backend (SQLite + imágenes + encabezados FITS) se guarda entre ejecuciones: así cada foto nueva
+      # solo descarga lo que falta. Las cachés de Actions no se pueden sobrescribir: se guarda una nueva por ejecución
+      # (clave con run_id) y se restaura la más reciente. GitHub borra las que no se usan en 7 días.
+      - name: Restaurar la base del backend
+        uses: actions/cache@v4
+        with:
+          path: lasco_backend/data
+          key: lasco-data-${{ github.run_id }}
+          restore-keys: lasco-data-
+
+      - name: Exportar la foto y compilar el sitio
+        run: deploy/estatico.sh
+
+      - name: Resumen
+        if: always()
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          p = pathlib.Path("lasco_test/dist-static/data/meta.json")
+          if not p.exists():
+              print("### [error] no se generó la foto")
+              raise SystemExit
+          m = json.loads(p.read_text())
+          c = m.get("counts", {})
+          img = c.get("images", {})
+          print(f"### Foto del {m['generatedAt']}")
+          print(f"- imágenes: c2 {img.get('c2', 0)} · c3 {img.get('c3', 0)}")
+          print(f"- encabezados: {c.get('headers', 0)} · eventos: {c.get('events', 0)}")
+          print(f"- fin de efemérides: {m.get('ephemerisEnd')}")
+          for w in m.get("warnings") or []:
+              print(f"- [!] {w}")
+          EOF
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: lasco_test/dist-static
+
+  publicar:
+    needs: construir
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - id: despliegue
+        uses: actions/deploy-pages@v4

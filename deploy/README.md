@@ -1,8 +1,8 @@
 # Despliegue en Oracle Cloud (Always Free, sin pasar a Pay As You Go)
 
 > Alternativa sin servidor: la versión estática (foto con fecha de los rangos 24h y 30d, sin «actualizar») se
-> construye con `deploy/estatico.sh` y se publica en cualquier hosting estático, p. ej. GitHub Pages. Ver
-> «Versión estática» en el [README principal](../README.md#versión-estática-sin-servidor-p-ej-github-pages).
+> construye con `deploy/estatico.sh` y se publica en cualquier hosting estático. Para GitHub Pages, guía paso a
+> paso en [`github-pages.md`](github-pages.md).
 
 Esta guía deja el panel publicado con HTTPS en una VM gratuita de Oracle Cloud, con los mismos contenedores
 de `docker-compose.yml` más un [Caddy](https://caddyserver.com) delante que gestiona el certificado.
